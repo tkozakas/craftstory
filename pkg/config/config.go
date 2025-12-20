@@ -21,7 +21,7 @@ const (
 	defaultTokenPath        = "./youtube_token.json"
 	defaultDeepSeekModel    = "deepseek-chat"
 	defaultDeepSeekPrompt   = "You are a creative scriptwriter for short-form viral videos. Generate engaging, high-retention scripts with hooks in the first 3 seconds. Use short punchy sentences."
-	defaultElevenLabsVoice  = "ryYbqj6CIlqb6M85s9Bl4n"
+	defaultElevenLabsVoice  = "JBFqnCBsd6RMkjVDRZzb"
 	defaultElevenLabsModel  = "eleven_flash_v2_5"
 	defaultSubtitleFont     = "Arial"
 	defaultSubtitleSize     = 48
