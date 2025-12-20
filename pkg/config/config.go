@@ -24,7 +24,7 @@ const (
 	defaultElevenLabsVoice  = "JBFqnCBsd6RMkjVDRZzb"
 	defaultElevenLabsModel  = "eleven_flash_v2_5"
 	defaultSubtitleFont     = "Arial"
-	defaultSubtitleSize     = 48
+	defaultSubtitleSize     = 128
 	defaultGCSBackgroundDir = "backgrounds"
 )
 

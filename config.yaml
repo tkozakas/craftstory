@@ -5,8 +5,8 @@ deepseek:
 elevenlabs:
   voice_id: "JBFqnCBsd6RMkjVDRZzb"
   model: "eleven_flash_v2_5"
-  stability: 0.5
-  similarity: 0.5
+  stability: 0.75
+  similarity: 0.75
 
 content:
   script_length: 50
@@ -21,7 +21,7 @@ video:
 
 subtitles:
   font_name: "Arial"
-  font_size: 48
+  font_size: 128
 
 youtube:
   default_tags:
