@@ -22,7 +22,7 @@ const (
 	defaultDeepSeekModel    = "deepseek-chat"
 	defaultDeepSeekPrompt   = "You are a creative scriptwriter for short-form viral videos. Generate engaging, high-retention scripts with hooks in the first 3 seconds. Use short punchy sentences."
 	defaultElevenLabsVoice  = "ryYbqj6CIlqb6M85s9Bl4n"
-	defaultElevenLabsModel  = "eleven_turbo_v2_5"
+	defaultElevenLabsModel  = "eleven_multilingual_v2"
 	defaultSubtitleFont     = "Arial"
 	defaultSubtitleSize     = 48
 	defaultGCSBackgroundDir = "backgrounds"
