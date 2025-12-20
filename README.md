@@ -7,13 +7,7 @@ YouTube Shorts automation tool that generates videos from Reddit stories with AI
 ### 1. Install mise
 
 ```bash
-curl https://mise.run | sh
-
-# Add to shell
-echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
-
-# Reload shell
-source ~/.zshrc
+curl https://mise.run | sh && echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc && source ~/.zshrc
 ```
 
 ### 2. Install tools
