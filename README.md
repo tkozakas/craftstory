@@ -4,10 +4,37 @@ YouTube Shorts automation tool that generates videos from Reddit stories with AI
 
 ## Setup
 
-- [mise](https://mise.jdx.dev/) (run `mise install` to install tools)
-- FFmpeg
+### 1. Install mise
 
-Create `.env`:
+```bash
+curl https://mise.run | sh
+
+# Add to shell
+echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
+# or for bash
+echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
+
+# Reload shell
+source ~/.zshrc  # or ~/.bashrc
+```
+
+### 2. Install tools
+
+```bash
+mise install
+```
+
+### 3. Install FFmpeg
+
+```bash
+# Ubuntu/Debian
+sudo apt install ffmpeg
+
+# Mac
+brew install ffmpeg
+```
+
+### 4. Create `.env`
 
 ```env
 DEEPSEEK_API_KEY=
@@ -18,10 +45,19 @@ GCS_BUCKET=                        # optional
 GOOGLE_APPLICATION_CREDENTIALS=    # optional
 ```
 
+### 5. Add background videos
+
+Put vertical videos (9:16) in `./assets/backgrounds/`
+
 ## Usage
 
 ```bash
-task run -- -topic "weird history fact"
-task run -- -topic "space theory" -upload
-```
+# Authenticate YouTube (first time only)
+task run -- auth
 
+# Generate video
+task run -- generate -topic "weird history fact"
+
+# Generate and upload
+task run -- generate -topic "space theory" -upload
+```
