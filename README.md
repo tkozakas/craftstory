@@ -11,11 +11,9 @@ curl https://mise.run | sh
 
 # Add to shell
 echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
-# or for bash
-echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
 
 # Reload shell
-source ~/.zshrc  # or ~/.bashrc
+source ~/.zshrc
 ```
 
 ### 2. Install tools
