@@ -3,7 +3,7 @@ version: "3"
 tasks:
   run:
     cmds:
-      - go run ./cmd/craftstory generate {{.CLI_ARGS}}
+      - go run ./cmd/craftstory {{.CLI_ARGS}}
 
   test:
     cmds:
@@ -21,7 +21,7 @@ tasks:
   docker-run:
     cmds:
       - docker build -t craftstory .
-      - docker run --env-file .env craftstory generate {{.CLI_ARGS}}
+      - docker run --env-file .env craftstory {{.CLI_ARGS}}
 
   docker-down:
     cmds:
