@@ -3,8 +3,8 @@ deepseek:
   system_prompt: "You are a creative scriptwriter for short-form viral videos. Generate engaging, high-retention scripts with hooks in the first 3 seconds. Use short punchy sentences."
 
 elevenlabs:
-  voice_id: "21m00Tcm4TlvDq8ikWAM"
-  model: "eleven_monolingual_v1"
+  voice_id: "ryYbqj6CIlqb6M85s9Bl4n"
+  model: "eleven_flash_v2_5"
   stability: 0.5
   similarity: 0.5
 
