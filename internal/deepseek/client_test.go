@@ -541,14 +541,14 @@ func TestCleanJSONResponse(t *testing.T) {
 
 func TestVisualCueStruct(t *testing.T) {
 	cue := VisualCue{
+		Keyword:     "cat",
 		SearchQuery: "cute cat",
-		WordIndex:   5,
 	}
 
+	if cue.Keyword != "cat" {
+		t.Errorf("Keyword = %q, want %q", cue.Keyword, "cat")
+	}
 	if cue.SearchQuery != "cute cat" {
 		t.Errorf("SearchQuery = %q, want %q", cue.SearchQuery, "cute cat")
-	}
-	if cue.WordIndex != 5 {
-		t.Errorf("WordIndex = %d, want %d", cue.WordIndex, 5)
 	}
 }

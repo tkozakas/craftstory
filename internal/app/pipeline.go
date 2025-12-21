@@ -105,6 +105,57 @@ func sanitizeForPath(s string) string {
 	return s
 }
 
+// wordSplitRegex matches word boundaries for splitting script into words.
+var wordSplitRegex = regexp.MustCompile(`\s+`)
+
+// findKeywordIndex searches for a keyword in the script and returns the 0-based word index.
+// It performs case-insensitive matching and handles punctuation attached to words.
+// Returns -1 if the keyword is not found.
+func findKeywordIndex(script, keyword string) int {
+	if keyword == "" {
+		return -1
+	}
+
+	words := wordSplitRegex.Split(script, -1)
+	keywordLower := strings.ToLower(keyword)
+	keywordWords := wordSplitRegex.Split(keywordLower, -1)
+
+	// Single word keyword
+	if len(keywordWords) == 1 {
+		for i, word := range words {
+			// Strip common punctuation from word for comparison
+			cleanWord := strings.ToLower(strings.Trim(word, ".,!?;:'\"()[]{}"))
+			if cleanWord == keywordLower {
+				return i
+			}
+		}
+		// Try partial match (keyword contained in word)
+		for i, word := range words {
+			cleanWord := strings.ToLower(strings.Trim(word, ".,!?;:'\"()[]{}"))
+			if strings.Contains(cleanWord, keywordLower) {
+				return i
+			}
+		}
+	} else {
+		// Multi-word keyword - find first word then verify sequence
+		for i := 0; i <= len(words)-len(keywordWords); i++ {
+			match := true
+			for j, kw := range keywordWords {
+				cleanWord := strings.ToLower(strings.Trim(words[i+j], ".,!?;:'\"()[]{}"))
+				if cleanWord != kw {
+					match = false
+					break
+				}
+			}
+			if match {
+				return i
+			}
+		}
+	}
+
+	return -1
+}
+
 func NewPipeline(svc *Service) *Pipeline {
 	return &Pipeline{svc: svc}
 }
@@ -190,7 +241,7 @@ func (p *Pipeline) generateSingleVoice(ctx context.Context, topic string) (*Gene
 
 	var imageOverlays []video.ImageOverlay
 	if len(visuals) > 0 {
-		imageOverlays = p.fetchVisualImagesWithSession(ctx, sess, visuals, speechResult.Timings)
+		imageOverlays = p.fetchVisualImagesWithSession(ctx, sess, script, visuals, speechResult.Timings)
 	}
 
 	assembleReq := video.AssembleRequest{
@@ -219,7 +270,7 @@ func (p *Pipeline) generateSingleVoice(ctx context.Context, topic string) (*Gene
 	}, nil
 }
 
-func (p *Pipeline) fetchVisualImagesWithSession(ctx context.Context, sess *session, visuals []deepseek.VisualCue, timings []elevenlabs.WordTiming) []video.ImageOverlay {
+func (p *Pipeline) fetchVisualImagesWithSession(ctx context.Context, sess *session, script string, visuals []deepseek.VisualCue, timings []elevenlabs.WordTiming) []video.ImageOverlay {
 	cfg := p.svc.Config()
 	overlays := make([]video.ImageOverlay, 0, len(visuals))
 
@@ -235,15 +286,26 @@ func (p *Pipeline) fetchVisualImagesWithSession(ctx context.Context, sess *sessi
 	}
 
 	for i, cue := range visuals {
+		// Find word index from keyword
+		wordIndex := findKeywordIndex(script, cue.Keyword)
+		if wordIndex < 0 {
+			slog.Warn("keyword not found in script",
+				"keyword", cue.Keyword,
+				"query", cue.SearchQuery,
+			)
+			continue
+		}
+
 		slog.Info("processing visual cue",
 			"index", i,
+			"keyword", cue.Keyword,
 			"query", cue.SearchQuery,
-			"word_index", cue.WordIndex,
+			"word_index", wordIndex,
 		)
 
-		if cue.WordIndex >= len(timings) {
+		if wordIndex >= len(timings) {
 			slog.Warn("visual word index out of range",
-				"index", cue.WordIndex,
+				"index", wordIndex,
 				"total_words", len(timings),
 			)
 			continue
@@ -323,12 +385,8 @@ func (p *Pipeline) fetchVisualImagesWithSession(ctx context.Context, sess *sessi
 
 		slog.Info("saved image", "path", imagePath)
 
-		startTime := timings[cue.WordIndex].StartTime
-
+		startTime := timings[wordIndex].StartTime
 		displayDuration := cfg.Visuals.DisplayTime
-		if cue.Duration > 0 {
-			displayDuration = cue.Duration
-		}
 		endTime := startTime + displayDuration
 
 		overlays = append(overlays, video.ImageOverlay{
@@ -340,6 +398,7 @@ func (p *Pipeline) fetchVisualImagesWithSession(ctx context.Context, sess *sessi
 		})
 
 		slog.Info("added image overlay",
+			"keyword", cue.Keyword,
 			"query", cue.SearchQuery,
 			"path", imagePath,
 			"start", startTime,
@@ -430,9 +489,10 @@ func (p *Pipeline) generateConversation(ctx context.Context, topic string) (*Gen
 	var imageOverlays []video.ImageOverlay
 	if cfg.Visuals.Enabled && p.svc.ImageSearch() != nil {
 		slog.Info("generating visual cues for conversation", "topic", topic)
-		visuals := p.generateVisualCues(ctx, parsed.FullText())
+		fullText := parsed.FullText()
+		visuals := p.generateVisualCues(ctx, fullText)
 		if len(visuals) > 0 {
-			imageOverlays = p.fetchVisualImagesWithSession(ctx, sess, visuals, stitched.Timings)
+			imageOverlays = p.fetchVisualImagesWithSession(ctx, sess, fullText, visuals, stitched.Timings)
 		}
 	}
 
@@ -617,7 +677,7 @@ func (p *Pipeline) GenerateBatchAndUpload(ctx context.Context, topics []string) 
 
 	for _, result := range batchResult.Results {
 		title := result.Title + " #shorts"
-		description := fmt.Sprintf("Generated video\n\n#shorts #facts")
+		description := "Generated video\n\n#shorts #facts"
 
 		resp, err := p.Upload(ctx, result.VideoPath, title, description)
 		if err != nil {

@@ -30,77 +30,39 @@ script:
     - ONLY dialogue lines, nothing else
 
   with_visuals: |
-    Generate a {{.ScriptLength}}-second script about {{.Topic}} with strategic visual cues.
-
-    Your task is to write an engaging script AND decide exactly when images should appear to maximize viewer engagement.
-
-    VISUAL PLACEMENT STRATEGY:
-    - Show an image whenever you mention something concrete/visual (person, place, object, animal)
-    - Show an image during surprising facts or "wow moments" to reinforce the point
-    - Show an image when transitioning between topics
-    - Show an image during emotional peaks (funny, shocking, heartwarming moments)
-    - Aim for 4-8 images in a {{.ScriptLength}}-second video (roughly every 5-10 seconds)
-    - Each image should display for 1.5-3 seconds
+    Generate a {{.ScriptLength}}-second script about {{.Topic}}.
 
     Requirements:
-    1. Write an engaging script with a hook in the first {{.HookDuration}} seconds
-    2. Use short punchy sentences
-    3. For EACH visual moment, provide:
-       - search_query: specific 2-4 word Google Image search (be specific! "golden retriever puppy" not "dog")
-       - word_index: which word (0-based) triggers the image
-       - duration: how long to show it (1.5-3.0 seconds)
+    1. Hook in the first {{.HookDuration}} seconds
+    2. Short punchy sentences
+    3. For each concrete noun, place, person, or animal, note it for visuals
 
-    Return ONLY valid JSON in this exact format:
+    Return ONLY valid JSON:
     {
-      "script": "Your full script text here without any speaker labels",
+      "script": "Your full script text here",
       "visuals": [
-        {"search_query": "specific image term", "word_index": 3, "duration": 2.0},
-        {"search_query": "another specific term", "word_index": 12, "duration": 1.5}
+        {"keyword": "word from script", "search_query": "specific image search"},
+        {"keyword": "another word", "search_query": "descriptive term"}
       ]
     }
 
-    GOOD search queries: "eiffel tower night", "baby elephant playing", "ancient rome colosseum", "astronaut spacewalk"
-    BAD search queries: "thing", "stuff", "concept", "idea"
-
   visuals_only: |
-    Analyze this script and add strategic visual cues to maximize viewer engagement.
+    Extract visual opportunities from this script. Identify concrete nouns, places, people, animals, or key facts that would benefit from an image.
 
     Script: {{.Script}}
 
-    VISUAL PLACEMENT STRATEGY - Add an image when:
-    ✓ A specific thing is mentioned (animal, object, place, person)
-    ✓ A key fact or surprising statement needs visual reinforcement
-    ✓ A new topic or subject is introduced
-    ✓ Something visually interesting is described
+    For each visual opportunity, provide:
+    - keyword: the exact word or short phrase from the script to anchor the image
+    - search_query: a specific 2-4 word Google Image search term
 
-    TIMING RULES:
-    1. Space images roughly every 4-6 seconds
-    2. Aim for 8-12 images for a typical 40-50 second video
-    3. Each image should display for 2-3 seconds
-    4. The word_index is the word number (0-based) where the image should appear
+    Return ONLY a JSON array:
+    [
+      {"keyword": "exact word from script", "search_query": "specific image search"},
+      {"keyword": "another word", "search_query": "descriptive search term"}
+    ]
 
-    Return ONLY valid JSON in this exact format:
-    {
-      "script": "copy the original script here unchanged",
-      "visuals": [
-        {"search_query": "specific image term", "word_index": 5, "duration": 2.5},
-        {"search_query": "another specific term", "word_index": 18, "duration": 2.5}
-      ]
-    }
-
-    Example distribution for ~120 word script (40 seconds):
-    - Image 1: word_index ~5
-    - Image 2: word_index ~15
-    - Image 3: word_index ~25
-    - Image 4: word_index ~35
-    - Image 5: word_index ~50
-    - Image 6: word_index ~65
-    - Image 7: word_index ~80
-    - Image 8: word_index ~95
-    - Image 9: word_index ~110
-
-    GOOD search queries: "mantis shrimp colorful", "vampire squid deep ocean", "barreleye fish transparent"
-    BAD search queries: "amazing", "concept", "idea", "thing", "interesting"
+    GOOD: {"keyword": "octopus", "search_query": "blue ringed octopus"}
+    BAD: {"keyword": "amazing", "search_query": "cool thing"}
 
 title:
   generate: |

@@ -16,6 +16,12 @@ elevenlabs:
       stability: 0.75
       similarity: 0.75
 
+tts:
+  provider: "elevenlabs"
+  xtts_server_url: "http://localhost:8020"
+  characters_dir: "./assets/characters"
+  language: "en"
+
 content:
   script_length: 50
   hook_duration: 3
@@ -43,10 +49,10 @@ music:
   fade_out: 2.0
 
 intro_outro:
-  intro_path: ""  # Optional: path to intro video clip (e.g., "./assets/intro.mp4")
-  outro_path: ""  # Optional: path to outro video clip (e.g., "./assets/outro.mp4")
-  intro_duration: 0  # Override duration (0 = use full clip)
-  outro_duration: 0  # Override duration (0 = use full clip)
+  intro_path: ""
+  outro_path: ""
+  intro_duration: 0
+  outro_duration: 0
 
 subtitles:
   font_name: "Montserrat Black"

@@ -433,3 +433,82 @@ func TestEnforceImageConstraints(t *testing.T) {
 		})
 	}
 }
+
+func TestFindKeywordIndex(t *testing.T) {
+	tests := []struct {
+		name    string
+		script  string
+		keyword string
+		want    int
+	}{
+		{
+			name:    "simpleMatch",
+			script:  "The quick brown fox jumps",
+			keyword: "fox",
+			want:    3,
+		},
+		{
+			name:    "firstWord",
+			script:  "Octopus are amazing creatures",
+			keyword: "octopus",
+			want:    0,
+		},
+		{
+			name:    "lastWord",
+			script:  "Look at that beautiful sunset",
+			keyword: "sunset",
+			want:    4,
+		},
+		{
+			name:    "caseInsensitive",
+			script:  "The TIGER is sleeping",
+			keyword: "tiger",
+			want:    1,
+		},
+		{
+			name:    "withPunctuation",
+			script:  "Look, a cat! Amazing.",
+			keyword: "cat",
+			want:    2,
+		},
+		{
+			name:    "notFound",
+			script:  "The quick brown fox",
+			keyword: "elephant",
+			want:    -1,
+		},
+		{
+			name:    "emptyKeyword",
+			script:  "Some script here",
+			keyword: "",
+			want:    -1,
+		},
+		{
+			name:    "multiWordKeyword",
+			script:  "The blue ringed octopus is dangerous",
+			keyword: "blue ringed",
+			want:    1,
+		},
+		{
+			name:    "partialMatch",
+			script:  "The octopuses swim fast",
+			keyword: "octopus",
+			want:    1,
+		},
+		{
+			name:    "quotedWord",
+			script:  `They call it "magic" for a reason`,
+			keyword: "magic",
+			want:    3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := findKeywordIndex(tt.script, tt.keyword)
+			if got != tt.want {
+				t.Errorf("findKeywordIndex(%q, %q) = %d, want %d", tt.script, tt.keyword, got, tt.want)
+			}
+		})
+	}
+}

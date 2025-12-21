@@ -61,10 +61,8 @@ type apiError struct {
 }
 
 type VisualCue struct {
-	SearchQuery string  `json:"search_query"`
-	WordIndex   int     `json:"word_index"`
-	Timestamp   float64 `json:"timestamp,omitempty"` // seconds into the video
-	Duration    float64 `json:"duration,omitempty"`  // how long to display (seconds)
+	Keyword     string `json:"keyword"`
+	SearchQuery string `json:"search_query"`
 }
 
 type ScriptWithVisuals struct {
@@ -231,21 +229,17 @@ func (c *Client) GenerateVisualsForScript(ctx context.Context, script string) ([
 		}
 	} else {
 		prompt = fmt.Sprintf(
-			`Analyze this script and suggest images to display at key moments throughout.
+			`Extract visual opportunities from this script.
 
 Script: %s
 
-Return ONLY valid JSON in this exact format:
-{
-  "script": "copy the original script here unchanged",
-  "visuals": [
-    {"search_query": "image search term", "word_index": 5},
-    {"search_query": "another search term", "word_index": 15}
-  ]
-}
+For each concrete noun, place, person, or animal, provide a search query.
 
-The word_index is which word number (0-based) the image should appear at.
-Make search queries specific and visual (e.g., "golden gate bridge", "cute puppy", "space nebula").`,
+Return ONLY a JSON array:
+[
+  {"keyword": "word from script", "search_query": "specific image search"},
+  {"keyword": "another word", "search_query": "descriptive term"}
+]`,
 			script,
 		)
 	}
@@ -262,12 +256,16 @@ Make search queries specific and visual (e.g., "golden gate bridge", "cute puppy
 
 	content = cleanJSONResponse(content)
 
-	var result ScriptWithVisuals
-	if err := json.Unmarshal([]byte(content), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse visuals response: %w", err)
+	var visuals []VisualCue
+	if err := json.Unmarshal([]byte(content), &visuals); err != nil {
+		var result ScriptWithVisuals
+		if err := json.Unmarshal([]byte(content), &result); err != nil {
+			return nil, fmt.Errorf("failed to parse visuals response: %w", err)
+		}
+		return result.Visuals, nil
 	}
 
-	return result.Visuals, nil
+	return visuals, nil
 }
 
 func cleanJSONResponse(s string) string {

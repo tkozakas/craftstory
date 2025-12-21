@@ -11,8 +11,10 @@ import (
 const (
 	defaultConfigPath       = "config.yaml"
 	defaultBackgroundDir    = "./assets/backgrounds"
+	defaultCharactersDir    = "./assets/characters"
 	defaultOutputDir        = "./output"
 	defaultCacheDir         = "./.cache"
+	defaultMusicDir         = "./assets/music"
 	defaultResolution       = "1080x1920"
 	defaultDuration         = 60
 	defaultScriptLength     = 50
@@ -27,7 +29,22 @@ const (
 	defaultSubtitleSize     = 128
 	defaultOutlineSize      = 5
 	defaultShadowSize       = 3
+	defaultPrimaryColor     = "#FFFFFF"
+	defaultOutlineColor     = "#000000"
 	defaultGCSBackgroundDir = "backgrounds"
+	defaultTTSProvider      = "elevenlabs"
+	defaultXTTSServerURL    = "http://localhost:8020"
+	defaultLanguage         = "en"
+	defaultVisualsPosition  = "top"
+	defaultDisplayTime      = 1.5
+	defaultImageWidth       = 600
+	defaultImageHeight      = 450
+	defaultMinGap           = 3.0
+	defaultMusicVolume      = 0.15
+	defaultMusicFadeIn      = 1.0
+	defaultMusicFadeOut     = 2.0
+	defaultStability        = 0.5
+	defaultSimilarity       = 0.5
 )
 
 type Voice struct {
@@ -49,6 +66,7 @@ type Config struct {
 
 	DeepSeek   DeepSeekConfig   `yaml:"deepseek"`
 	ElevenLabs ElevenLabsConfig `yaml:"elevenlabs"`
+	TTS        TTSConfig        `yaml:"tts"`
 	Content    ContentConfig    `yaml:"content"`
 	Video      VideoConfig      `yaml:"video"`
 	Music      MusicConfig      `yaml:"music"`
@@ -70,6 +88,13 @@ type ElevenLabsConfig struct {
 	Stability  float64 `yaml:"stability"`
 	Similarity float64 `yaml:"similarity"`
 	Voices     []Voice `yaml:"voices"`
+}
+
+type TTSConfig struct {
+	Provider      string `yaml:"provider"`
+	XTTSServerURL string `yaml:"xtts_server_url"`
+	CharactersDir string `yaml:"characters_dir"`
+	Language      string `yaml:"language"`
 }
 
 type ContentConfig struct {
@@ -122,6 +147,13 @@ type GCSConfig struct {
 	BackgroundDir string `yaml:"background_dir"`
 }
 
+type Character struct {
+	Name          string `yaml:"name"`
+	VoiceSample   string `yaml:"voice_sample"`
+	Image         string `yaml:"image"`
+	SubtitleColor string `yaml:"subtitle_color"`
+}
+
 type VisualsConfig struct {
 	Enabled     bool    `yaml:"enabled"`
 	Position    string  `yaml:"position"`
@@ -168,6 +200,7 @@ func loadYAMLConfig(cfg *Config) {
 func applyDefaults(cfg *Config) {
 	applyDeepSeekDefaults(cfg)
 	applyElevenLabsDefaults(cfg)
+	applyTTSDefaults(cfg)
 	applyContentDefaults(cfg)
 	applyVideoDefaults(cfg)
 	applyMusicDefaults(cfg)
@@ -194,10 +227,25 @@ func applyElevenLabsDefaults(cfg *Config) {
 		cfg.ElevenLabs.Model = defaultElevenLabsModel
 	}
 	if cfg.ElevenLabs.Stability == 0 {
-		cfg.ElevenLabs.Stability = 0.5
+		cfg.ElevenLabs.Stability = defaultStability
 	}
 	if cfg.ElevenLabs.Similarity == 0 {
-		cfg.ElevenLabs.Similarity = 0.5
+		cfg.ElevenLabs.Similarity = defaultSimilarity
+	}
+}
+
+func applyTTSDefaults(cfg *Config) {
+	if cfg.TTS.Provider == "" {
+		cfg.TTS.Provider = defaultTTSProvider
+	}
+	if cfg.TTS.XTTSServerURL == "" {
+		cfg.TTS.XTTSServerURL = defaultXTTSServerURL
+	}
+	if cfg.TTS.CharactersDir == "" {
+		cfg.TTS.CharactersDir = defaultCharactersDir
+	}
+	if cfg.TTS.Language == "" {
+		cfg.TTS.Language = defaultLanguage
 	}
 }
 
@@ -230,16 +278,16 @@ func applyVideoDefaults(cfg *Config) {
 
 func applyMusicDefaults(cfg *Config) {
 	if cfg.Music.Dir == "" {
-		cfg.Music.Dir = "./assets/music"
+		cfg.Music.Dir = defaultMusicDir
 	}
 	if cfg.Music.Volume == 0 {
-		cfg.Music.Volume = 0.15
+		cfg.Music.Volume = defaultMusicVolume
 	}
 	if cfg.Music.FadeIn == 0 {
-		cfg.Music.FadeIn = 1.0
+		cfg.Music.FadeIn = defaultMusicFadeIn
 	}
 	if cfg.Music.FadeOut == 0 {
-		cfg.Music.FadeOut = 2.0
+		cfg.Music.FadeOut = defaultMusicFadeOut
 	}
 }
 
@@ -251,10 +299,10 @@ func applySubtitlesDefaults(cfg *Config) {
 		cfg.Subtitles.FontSize = defaultSubtitleSize
 	}
 	if cfg.Subtitles.PrimaryColor == "" {
-		cfg.Subtitles.PrimaryColor = "#FFFFFF"
+		cfg.Subtitles.PrimaryColor = defaultPrimaryColor
 	}
 	if cfg.Subtitles.OutlineColor == "" {
-		cfg.Subtitles.OutlineColor = "#000000"
+		cfg.Subtitles.OutlineColor = defaultOutlineColor
 	}
 	if cfg.Subtitles.OutlineSize == 0 {
 		cfg.Subtitles.OutlineSize = defaultOutlineSize
@@ -281,19 +329,19 @@ func applyGCSDefaults(cfg *Config) {
 
 func applyVisualsDefaults(cfg *Config) {
 	if cfg.Visuals.Position == "" {
-		cfg.Visuals.Position = "top"
+		cfg.Visuals.Position = defaultVisualsPosition
 	}
 	if cfg.Visuals.DisplayTime == 0 {
-		cfg.Visuals.DisplayTime = 1.5
+		cfg.Visuals.DisplayTime = defaultDisplayTime
 	}
 	if cfg.Visuals.ImageWidth == 0 {
-		cfg.Visuals.ImageWidth = 600
+		cfg.Visuals.ImageWidth = defaultImageWidth
 	}
 	if cfg.Visuals.ImageHeight == 0 {
-		cfg.Visuals.ImageHeight = 450
+		cfg.Visuals.ImageHeight = defaultImageHeight
 	}
 	if cfg.Visuals.MinGap == 0 {
-		cfg.Visuals.MinGap = 3.0
+		cfg.Visuals.MinGap = defaultMinGap
 	}
 }
 
