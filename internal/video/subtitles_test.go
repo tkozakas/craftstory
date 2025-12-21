@@ -3,6 +3,8 @@ package video
 import (
 	"strings"
 	"testing"
+
+	"craftstory/internal/elevenlabs"
 )
 
 func TestGenerate(t *testing.T) {
@@ -186,5 +188,54 @@ func TestSubtitleWords(t *testing.T) {
 		if sub.Word != expectedWords[i] {
 			t.Errorf("subtitle %d: word = %q, want %q", i, sub.Word, expectedWords[i])
 		}
+	}
+}
+
+func TestGenerateFromTimings(t *testing.T) {
+	gen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
+
+	timings := []elevenlabs.WordTiming{
+		{Word: "Hello", StartTime: 0.0, EndTime: 0.5},
+		{Word: "world", StartTime: 0.6, EndTime: 1.1},
+	}
+
+	subs := gen.GenerateFromTimings(timings)
+
+	if len(subs) != 2 {
+		t.Fatalf("expected 2 subtitles, got %d", len(subs))
+	}
+
+	if subs[0].Word != "Hello" {
+		t.Errorf("first word = %q, want %q", subs[0].Word, "Hello")
+	}
+	if subs[0].StartTime != 0.0 {
+		t.Errorf("first start = %v, want %v", subs[0].StartTime, 0.0)
+	}
+	if subs[0].EndTime != 0.5 {
+		t.Errorf("first end = %v, want %v", subs[0].EndTime, 0.5)
+	}
+
+	if subs[1].Word != "world" {
+		t.Errorf("second word = %q, want %q", subs[1].Word, "world")
+	}
+	if subs[1].StartTime != 0.6 {
+		t.Errorf("second start = %v, want %v", subs[1].StartTime, 0.6)
+	}
+	if subs[1].EndTime != 1.1 {
+		t.Errorf("second end = %v, want %v", subs[1].EndTime, 1.1)
+	}
+}
+
+func TestToASSCenterAligned(t *testing.T) {
+	gen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
+
+	subs := []Subtitle{
+		{Word: "Test", StartTime: 0.0, EndTime: 1.0},
+	}
+
+	ass := gen.ToASS(subs)
+
+	if !strings.Contains(ass, ",5,") {
+		t.Error("ASS output should have center alignment (5)")
 	}
 }

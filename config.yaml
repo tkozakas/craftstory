@@ -1,16 +1,32 @@
 deepseek:
   model: deepseek-chat
-  system_prompt: "You are a creative scriptwriter for short-form viral videos. Generate engaging, high-retention scripts with hooks in the first 3 seconds. Use short punchy sentences."
 
 elevenlabs:
   voice_id: "JBFqnCBsd6RMkjVDRZzb"
   model: "eleven_flash_v2_5"
   stability: 0.75
   similarity: 0.75
+  voices:
+    - name: "Host"
+      id: "JBFqnCBsd6RMkjVDRZzb"
+      stability: 0.75
+      similarity: 0.75
+    - name: "Guest"
+      id: "EXAVITQu4vr4xnSDxMaL"
+      stability: 0.75
+      similarity: 0.75
 
 content:
   script_length: 50
   hook_duration: 3
+  conversation_mode: true
+
+visuals:
+  enabled: true
+  position: "top"
+  display_time: 1.5
+  image_width: 600
+  image_height: 450
 
 video:
   background_dir: "./assets/backgrounds"
@@ -21,7 +37,7 @@ video:
 
 subtitles:
   font_name: "Arial"
-  font_size: 128
+  font_size: 148
 
 youtube:
   default_tags:

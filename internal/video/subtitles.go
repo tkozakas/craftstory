@@ -3,6 +3,8 @@ package video
 import (
 	"fmt"
 	"strings"
+
+	"craftstory/internal/elevenlabs"
 )
 
 type Subtitle struct {
@@ -26,6 +28,18 @@ func NewSubtitleGenerator(opts SubtitleOptions) *SubtitleGenerator {
 		fontName: opts.FontName,
 		fontSize: opts.FontSize,
 	}
+}
+
+func (g *SubtitleGenerator) GenerateFromTimings(timings []elevenlabs.WordTiming) []Subtitle {
+	subtitles := make([]Subtitle, 0, len(timings))
+	for _, t := range timings {
+		subtitles = append(subtitles, Subtitle{
+			Word:      t.Word,
+			StartTime: t.StartTime,
+			EndTime:   t.EndTime,
+		})
+	}
+	return subtitles
 }
 
 func (g *SubtitleGenerator) Generate(text string, audioDuration float64) []Subtitle {
@@ -63,7 +77,7 @@ func (g *SubtitleGenerator) ToASS(subtitles []Subtitle) string {
 
 	sb.WriteString("[V4+ Styles]\n")
 	sb.WriteString("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
-	sb.WriteString(fmt.Sprintf("Style: Default,%s,%d,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,0,2,10,10,50,1\n",
+	sb.WriteString(fmt.Sprintf("Style: Default,%s,%d,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,0,5,10,10,50,1\n",
 		g.fontName, g.fontSize))
 	sb.WriteString("\n")
 

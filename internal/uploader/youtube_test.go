@@ -89,7 +89,6 @@ func TestYouTubeAuthLoadToken(t *testing.T) {
 			name:    "missingFile",
 			wantErr: true,
 			setupFunc: func(t *testing.T, path string) {
-				// Don't create any file
 			},
 		},
 		{
@@ -199,7 +198,6 @@ func TestYouTubeAuthIsAuthenticated(t *testing.T) {
 		{
 			name: "noToken",
 			setupFunc: func(t *testing.T, auth *YouTubeAuth) {
-				// No token set, no file exists
 			},
 			want: false,
 		},
@@ -272,7 +270,6 @@ func TestYouTubeAuthClient(t *testing.T) {
 		{
 			name: "noTokenAvailable",
 			setupFunc: func(t *testing.T, auth *YouTubeAuth, path string) {
-				// No token set, no file
 			},
 			wantErr: true,
 		},

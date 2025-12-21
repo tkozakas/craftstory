@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"craftstory/internal/elevenlabs"
 	"craftstory/internal/uploader"
 	"craftstory/pkg/config"
 )
@@ -34,7 +35,7 @@ func TestServiceGetters(t *testing.T) {
 		DeepSeek: config.DeepSeekConfig{Model: "test-model"},
 	}
 
-	svc := NewService(cfg, nil, nil, nil, nil, nil, nil)
+	svc := NewService(cfg, nil, nil, nil, nil, nil, nil, nil)
 
 	if svc.Config() != cfg {
 		t.Error("Config() returned wrong config")
@@ -63,11 +64,15 @@ func TestServiceGetters(t *testing.T) {
 	if svc.Reddit() != nil {
 		t.Error("Reddit() should return nil when set to nil")
 	}
+
+	if svc.ImageSearch() != nil {
+		t.Error("ImageSearch() should return nil when set to nil")
+	}
 }
 
 func TestNewPipeline(t *testing.T) {
 	cfg := &config.Config{}
-	svc := NewService(cfg, nil, nil, nil, nil, nil, nil)
+	svc := NewService(cfg, nil, nil, nil, nil, nil, nil, nil)
 	pipeline := NewPipeline(svc)
 
 	if pipeline == nil {
@@ -160,7 +165,7 @@ func TestPipelineUpload(t *testing.T) {
 				},
 			}
 
-			svc := NewService(cfg, nil, nil, mockUp, nil, nil, nil)
+			svc := NewService(cfg, nil, nil, mockUp, nil, nil, nil, nil)
 			pipeline := NewPipeline(svc)
 
 			ctx := context.Background()
@@ -175,6 +180,119 @@ func TestPipelineUpload(t *testing.T) {
 				if resp.ID != tt.uploadResp.ID {
 					t.Errorf("Upload() ID = %q, want %q", resp.ID, tt.uploadResp.ID)
 				}
+			}
+		})
+	}
+}
+
+func TestGetAudioDuration(t *testing.T) {
+	tests := []struct {
+		name    string
+		timings []elevenlabs.WordTiming
+		want    float64
+	}{
+		{
+			name:    "emptyTimings",
+			timings: []elevenlabs.WordTiming{},
+			want:    0,
+		},
+		{
+			name:    "nilTimings",
+			timings: nil,
+			want:    0,
+		},
+		{
+			name: "singleWord",
+			timings: []elevenlabs.WordTiming{
+				{Word: "Hello", StartTime: 0, EndTime: 0.5},
+			},
+			want: 0.5,
+		},
+		{
+			name: "multipleWords",
+			timings: []elevenlabs.WordTiming{
+				{Word: "Hello", StartTime: 0, EndTime: 0.5},
+				{Word: "World", StartTime: 0.5, EndTime: 1.0},
+				{Word: "Test", StartTime: 1.0, EndTime: 1.5},
+			},
+			want: 1.5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getAudioDuration(tt.timings)
+			if got != tt.want {
+				t.Errorf("getAudioDuration() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGenerateResultStruct(t *testing.T) {
+	result := GenerateResult{
+		Title:         "Test Title",
+		ScriptContent: "Test script",
+		AudioPath:     "/path/to/audio.mp3",
+		VideoPath:     "/path/to/video.mp4",
+		Duration:      30.5,
+	}
+
+	if result.Title != "Test Title" {
+		t.Errorf("Title = %q, want %q", result.Title, "Test Title")
+	}
+	if result.ScriptContent != "Test script" {
+		t.Errorf("ScriptContent = %q, want %q", result.ScriptContent, "Test script")
+	}
+	if result.AudioPath != "/path/to/audio.mp3" {
+		t.Errorf("AudioPath = %q, want %q", result.AudioPath, "/path/to/audio.mp3")
+	}
+	if result.VideoPath != "/path/to/video.mp4" {
+		t.Errorf("VideoPath = %q, want %q", result.VideoPath, "/path/to/video.mp4")
+	}
+	if result.Duration != 30.5 {
+		t.Errorf("Duration = %v, want %v", result.Duration, 30.5)
+	}
+}
+
+func TestIsValidImage(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{
+			name: "validJPEG",
+			data: append([]byte{0xFF, 0xD8, 0xFF}, make([]byte, 100)...),
+			want: true,
+		},
+		{
+			name: "validPNG",
+			data: append([]byte{0x89, 0x50, 0x4E, 0x47}, make([]byte, 100)...),
+			want: true,
+		},
+		{
+			name: "tooSmall",
+			data: []byte{0xFF, 0xD8, 0xFF},
+			want: false,
+		},
+		{
+			name: "invalidData",
+			data: make([]byte, 200),
+			want: false,
+		},
+		{
+			name: "emptyData",
+			data: []byte{},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isValidImage(tt.data)
+			if got != tt.want {
+				t.Errorf("isValidImage() = %v, want %v", got, tt.want)
 			}
 		})
 	}

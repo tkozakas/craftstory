@@ -1,0 +1,76 @@
+system:
+  default: "You are a creative scriptwriter for short-form viral videos. Generate engaging, high-retention scripts with hooks in the first 3 seconds. Use short punchy sentences."
+  conversation: "You are a scriptwriter for viral short-form video conversations. Write engaging dialogue. Output ONLY dialogue lines in 'Speaker: text' format, one per line."
+  visuals: "You are a creative scriptwriter. Always respond with valid JSON only, no markdown or extra text."
+  title: "You are a YouTube title expert. Generate viral, engaging titles."
+
+script:
+  single: |
+    Generate a {{.ScriptLength}}-second script about {{.Topic}}.
+    Use high-retention language, short sentences, and a hook in the first {{.HookDuration}} seconds.
+    Do not include stage directions or speaker labels. Just the spoken text.
+
+  conversation: |
+    Generate a {{.ScriptLength}}-second conversational script about {{.Topic}}.
+
+    Speakers: {{.SpeakerList}}
+
+    IMPORTANT FORMAT RULES:
+    - Each line MUST start with the speaker name followed by a colon
+    - Example format:
+      {{.FirstSpeaker}}: First line of dialogue here.
+      {{.LastSpeaker}}: Response dialogue here.
+
+    Requirements:
+    - Hook the viewer in the first {{.HookDuration}} seconds with something surprising or intriguing
+    - Use short, punchy sentences (max 15 words per line)
+    - Natural back-and-forth between speakers
+    - High energy and entertaining
+    - NO stage directions, actions, or descriptions in parentheses
+    - ONLY dialogue lines, nothing else
+
+  with_visuals: |
+    Generate a {{.ScriptLength}}-second script about {{.Topic}} with visual cues.
+
+    Requirements:
+    1. Write an engaging script with a hook in the first {{.HookDuration}} seconds
+    2. Use short punchy sentences
+    3. Suggest images to display at key moments throughout the script
+    4. Each visual should have a simple search query (2-4 words) for Google Image search
+
+    Return ONLY valid JSON in this exact format:
+    {
+      "script": "Your full script text here without any speaker labels",
+      "visuals": [
+        {"search_query": "image search term", "word_index": 5},
+        {"search_query": "another search term", "word_index": 15}
+      ]
+    }
+
+    The word_index is which word number (0-based) the image should appear at.
+    Make search queries specific and visual (e.g., "golden gate bridge", "cute puppy", "space nebula").
+
+  visuals_only: |
+    Analyze this script and suggest images to display at key moments throughout.
+
+    Script: {{.Script}}
+
+    Return ONLY valid JSON in this exact format:
+    {
+      "script": "copy the original script here unchanged",
+      "visuals": [
+        {"search_query": "image search term", "word_index": 5},
+        {"search_query": "another search term", "word_index": 15}
+      ]
+    }
+
+    The word_index is which word number (0-based) the image should appear at.
+    Make search queries specific and visual (e.g., "golden gate bridge", "cute puppy", "space nebula").
+    Choose moments that would benefit from visual reinforcement.
+
+title:
+  generate: |
+    Generate a catchy, clickbait YouTube Shorts title for this script.
+    Max 60 characters. No quotes. No hashtags. Just the title.
+
+    Script: {{.Script}}

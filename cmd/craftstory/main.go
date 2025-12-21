@@ -12,11 +12,13 @@ import (
 	"craftstory/internal/app"
 	"craftstory/internal/deepseek"
 	"craftstory/internal/elevenlabs"
+	"craftstory/internal/imagesearch"
 	"craftstory/internal/reddit"
 	"craftstory/internal/storage"
 	"craftstory/internal/uploader"
 	"craftstory/internal/video"
 	"craftstory/pkg/config"
+	"craftstory/pkg/prompts"
 )
 
 func main() {
@@ -71,17 +73,21 @@ func handleGenerate(cmd *flag.FlagSet, cfg *config.Config) {
 			slog.Error("Failed to generate and upload video", "error", err)
 			os.Exit(1)
 		}
-		fmt.Printf("Video uploaded successfully: %s\n", resp.URL)
+		fmt.Printf("\n✅ Video uploaded successfully!\n")
+		fmt.Printf("   URL: %s\n\n", resp.URL)
 	} else {
 		result, err := pipeline.Generate(ctx, *topic)
 		if err != nil {
 			slog.Error("Failed to generate video", "error", err)
 			os.Exit(1)
 		}
-		fmt.Printf("Video generated successfully:\n")
-		fmt.Printf("  Video: %s\n", result.VideoPath)
-		fmt.Printf("  Audio: %s\n", result.AudioPath)
-		fmt.Printf("  Duration: %.2f seconds\n", result.Duration)
+		fmt.Printf("\n✅ Video generated successfully!\n")
+		fmt.Printf("┌─────────────────────────────────────────────────────────────\n")
+		fmt.Printf("│ Title:    %s\n", result.Title)
+		fmt.Printf("│ Video:    %s\n", result.VideoPath)
+		fmt.Printf("│ Audio:    %s\n", result.AudioPath)
+		fmt.Printf("│ Duration: %.2f seconds\n", result.Duration)
+		fmt.Printf("└─────────────────────────────────────────────────────────────\n\n")
 	}
 }
 
@@ -148,9 +154,15 @@ func handleAuth(cmd *flag.FlagSet, cfg *config.Config) {
 func initService(cfg *config.Config) *app.Service {
 	ctx := context.Background()
 
+	p, err := prompts.Load()
+	if err != nil {
+		slog.Warn("Failed to load prompts, using defaults", "error", err)
+	}
+
 	dsClient := deepseek.NewClient(cfg.DeepSeekAPIKey, deepseek.Options{
 		Model:        cfg.DeepSeek.Model,
 		SystemPrompt: cfg.DeepSeek.SystemPrompt,
+		Prompts:      p,
 	})
 
 	elClient := elevenlabs.NewClient(cfg.ElevenLabsAPIKey, elevenlabs.Options{
@@ -186,11 +198,22 @@ func initService(cfg *config.Config) *app.Service {
 		slog.Info("Using local storage", "dir", cfg.Video.BackgroundDir)
 	}
 
-	assembler := video.NewAssembler(cfg.Video.OutputDir, subtitleGen, bgProvider)
+	assembler := video.NewAssemblerWithOptions(video.AssemblerOptions{
+		OutputDir:   cfg.Video.OutputDir,
+		Resolution:  cfg.Video.Resolution,
+		SubtitleGen: subtitleGen,
+		BgProvider:  bgProvider,
+	})
 	localStorage := storage.NewLocalStorage(cfg.Video.BackgroundDir, cfg.Video.OutputDir)
 	redditClient := reddit.NewClient()
 
-	return app.NewService(cfg, dsClient, elClient, ytUploader, assembler, localStorage, redditClient)
+	var imgSearchClient *imagesearch.Client
+	if cfg.Visuals.Enabled && cfg.GoogleSearchAPIKey != "" && cfg.GoogleSearchEngineID != "" {
+		imgSearchClient = imagesearch.NewClient(cfg.GoogleSearchAPIKey, cfg.GoogleSearchEngineID)
+		slog.Info("Image search enabled")
+	}
+
+	return app.NewService(cfg, dsClient, elClient, ytUploader, assembler, localStorage, redditClient, imgSearchClient)
 }
 
 func printUsage() {

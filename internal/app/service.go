@@ -3,6 +3,7 @@ package app
 import (
 	"craftstory/internal/deepseek"
 	"craftstory/internal/elevenlabs"
+	"craftstory/internal/imagesearch"
 	"craftstory/internal/reddit"
 	"craftstory/internal/storage"
 	"craftstory/internal/uploader"
@@ -11,13 +12,14 @@ import (
 )
 
 type Service struct {
-	cfg        *config.Config
-	deepseek   *deepseek.Client
-	elevenlabs *elevenlabs.Client
-	uploader   uploader.Uploader
-	assembler  *video.Assembler
-	storage    *storage.LocalStorage
-	reddit     *reddit.Client
+	cfg         *config.Config
+	deepseek    *deepseek.Client
+	elevenlabs  *elevenlabs.Client
+	uploader    uploader.Uploader
+	assembler   *video.Assembler
+	storage     *storage.LocalStorage
+	reddit      *reddit.Client
+	imageSearch *imagesearch.Client
 }
 
 func NewService(
@@ -28,15 +30,17 @@ func NewService(
 	assembler *video.Assembler,
 	storage *storage.LocalStorage,
 	reddit *reddit.Client,
+	imageSearch *imagesearch.Client,
 ) *Service {
 	return &Service{
-		cfg:        cfg,
-		deepseek:   deepseek,
-		elevenlabs: elevenlabs,
-		uploader:   up,
-		assembler:  assembler,
-		storage:    storage,
-		reddit:     reddit,
+		cfg:         cfg,
+		deepseek:    deepseek,
+		elevenlabs:  elevenlabs,
+		uploader:    up,
+		assembler:   assembler,
+		storage:     storage,
+		reddit:      reddit,
+		imageSearch: imageSearch,
 	}
 }
 
@@ -66,4 +70,8 @@ func (s *Service) Storage() *storage.LocalStorage {
 
 func (s *Service) Reddit() *reddit.Client {
 	return s.reddit
+}
+
+func (s *Service) ImageSearch() *imagesearch.Client {
+	return s.imageSearch
 }

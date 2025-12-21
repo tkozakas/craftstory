@@ -24,17 +24,26 @@ const (
 	defaultElevenLabsVoice  = "JBFqnCBsd6RMkjVDRZzb"
 	defaultElevenLabsModel  = "eleven_flash_v2_5"
 	defaultSubtitleFont     = "Arial"
-	defaultSubtitleSize     = 128
+	defaultSubtitleSize     = 148
 	defaultGCSBackgroundDir = "backgrounds"
 )
 
+type Voice struct {
+	ID         string  `yaml:"id"`
+	Name       string  `yaml:"name"`
+	Stability  float64 `yaml:"stability"`
+	Similarity float64 `yaml:"similarity"`
+}
+
 type Config struct {
-	DeepSeekAPIKey      string
-	ElevenLabsAPIKey    string
-	YouTubeClientID     string
-	YouTubeClientSecret string
-	YouTubeTokenPath    string
-	GCSBucket           string
+	DeepSeekAPIKey       string
+	ElevenLabsAPIKey     string
+	YouTubeClientID      string
+	YouTubeClientSecret  string
+	YouTubeTokenPath     string
+	GCSBucket            string
+	GoogleSearchAPIKey   string
+	GoogleSearchEngineID string
 
 	DeepSeek   DeepSeekConfig   `yaml:"deepseek"`
 	ElevenLabs ElevenLabsConfig `yaml:"elevenlabs"`
@@ -43,6 +52,7 @@ type Config struct {
 	Subtitles  SubtitlesConfig  `yaml:"subtitles"`
 	YouTube    YouTubeConfig    `yaml:"youtube"`
 	GCS        GCSConfig        `yaml:"gcs"`
+	Visuals    VisualsConfig    `yaml:"visuals"`
 }
 
 type DeepSeekConfig struct {
@@ -55,11 +65,13 @@ type ElevenLabsConfig struct {
 	Model      string  `yaml:"model"`
 	Stability  float64 `yaml:"stability"`
 	Similarity float64 `yaml:"similarity"`
+	Voices     []Voice `yaml:"voices"`
 }
 
 type ContentConfig struct {
-	ScriptLength int `yaml:"script_length"`
-	HookDuration int `yaml:"hook_duration"`
+	ScriptLength     int  `yaml:"script_length"`
+	HookDuration     int  `yaml:"hook_duration"`
+	ConversationMode bool `yaml:"conversation_mode"`
 }
 
 type VideoConfig struct {
@@ -86,18 +98,28 @@ type GCSConfig struct {
 	BackgroundDir string `yaml:"background_dir"`
 }
 
+type VisualsConfig struct {
+	Enabled     bool    `yaml:"enabled"`
+	Position    string  `yaml:"position"`
+	DisplayTime float64 `yaml:"display_time"`
+	ImageWidth  int     `yaml:"image_width"`
+	ImageHeight int     `yaml:"image_height"`
+}
+
 func Load() *Config {
 	if err := godotenv.Load(); err != nil {
 		slog.Warn("No .env file found, relying on environment variables")
 	}
 
 	cfg := &Config{
-		DeepSeekAPIKey:      os.Getenv("DEEPSEEK_API_KEY"),
-		ElevenLabsAPIKey:    os.Getenv("ELEVENLABS_API_KEY"),
-		YouTubeClientID:     os.Getenv("YOUTUBE_CLIENT_ID"),
-		YouTubeClientSecret: os.Getenv("YOUTUBE_CLIENT_SECRET"),
-		YouTubeTokenPath:    getEnvOrDefault("YOUTUBE_TOKEN_PATH", defaultTokenPath),
-		GCSBucket:           os.Getenv("GCS_BUCKET"),
+		DeepSeekAPIKey:       os.Getenv("DEEPSEEK_API_KEY"),
+		ElevenLabsAPIKey:     os.Getenv("ELEVENLABS_API_KEY"),
+		YouTubeClientID:      os.Getenv("YOUTUBE_CLIENT_ID"),
+		YouTubeClientSecret:  os.Getenv("YOUTUBE_CLIENT_SECRET"),
+		YouTubeTokenPath:     getEnvOrDefault("YOUTUBE_TOKEN_PATH", defaultTokenPath),
+		GCSBucket:            os.Getenv("GCS_BUCKET"),
+		GoogleSearchAPIKey:   os.Getenv("GOOGLE_SEARCH_API_KEY"),
+		GoogleSearchEngineID: os.Getenv("GOOGLE_SEARCH_ENGINE_ID"),
 	}
 
 	loadYAMLConfig(cfg)
@@ -126,6 +148,7 @@ func applyDefaults(cfg *Config) {
 	applySubtitlesDefaults(cfg)
 	applyYouTubeDefaults(cfg)
 	applyGCSDefaults(cfg)
+	applyVisualsDefaults(cfg)
 }
 
 func applyDeepSeekDefaults(cfg *Config) {
@@ -200,6 +223,21 @@ func applyYouTubeDefaults(cfg *Config) {
 func applyGCSDefaults(cfg *Config) {
 	if cfg.GCS.BackgroundDir == "" {
 		cfg.GCS.BackgroundDir = defaultGCSBackgroundDir
+	}
+}
+
+func applyVisualsDefaults(cfg *Config) {
+	if cfg.Visuals.Position == "" {
+		cfg.Visuals.Position = "top"
+	}
+	if cfg.Visuals.DisplayTime == 0 {
+		cfg.Visuals.DisplayTime = 1.5
+	}
+	if cfg.Visuals.ImageWidth == 0 {
+		cfg.Visuals.ImageWidth = 600
+	}
+	if cfg.Visuals.ImageHeight == 0 {
+		cfg.Visuals.ImageHeight = 450
 	}
 }
 

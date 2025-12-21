@@ -309,3 +309,246 @@ func TestGenerateTitle(t *testing.T) {
 		})
 	}
 }
+
+func TestGenerateConversation(t *testing.T) {
+	tests := []struct {
+		name           string
+		topic          string
+		speakers       []string
+		scriptLength   int
+		hookDuration   int
+		serverResponse response
+		serverStatus   int
+		wantErr        bool
+		wantContent    string
+	}{
+		{
+			name:         "successfulConversation",
+			topic:        "aliens",
+			speakers:     []string{"Host", "Guest"},
+			scriptLength: 30,
+			hookDuration: 5,
+			serverResponse: response{
+				ID: "conv-123",
+				Choices: []choice{
+					{Message: Message{Role: "assistant", Content: "Host: Do you believe in aliens?\nGuest: Absolutely!"}},
+				},
+			},
+			serverStatus: http.StatusOK,
+			wantErr:      false,
+			wantContent:  "Host: Do you believe in aliens?\nGuest: Absolutely!",
+		},
+		{
+			name:         "threeSpeakers",
+			topic:        "debate",
+			speakers:     []string{"Alice", "Bob", "Charlie"},
+			scriptLength: 60,
+			hookDuration: 3,
+			serverResponse: response{
+				ID: "conv-456",
+				Choices: []choice{
+					{Message: Message{Role: "assistant", Content: "Alice: Welcome!\nBob: Thanks!\nCharlie: Great to be here!"}},
+				},
+			},
+			serverStatus: http.StatusOK,
+			wantErr:      false,
+			wantContent:  "Alice: Welcome!\nBob: Thanks!\nCharlie: Great to be here!",
+		},
+		{
+			name:         "serverError",
+			topic:        "test",
+			speakers:     []string{"A", "B"},
+			scriptLength: 30,
+			hookDuration: 5,
+			serverStatus: http.StatusInternalServerError,
+			wantErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.serverStatus)
+				if tt.serverStatus == http.StatusOK {
+					_ = json.NewEncoder(w).Encode(tt.serverResponse)
+				}
+			}))
+			defer server.Close()
+
+			client := NewClient("test-key", Options{Model: "deepseek-chat"})
+			client.baseURL = server.URL
+
+			ctx := context.Background()
+			got, err := client.GenerateConversation(ctx, tt.topic, tt.speakers, tt.scriptLength, tt.hookDuration)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GenerateConversation() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr && got != tt.wantContent {
+				t.Errorf("GenerateConversation() = %q, want %q", got, tt.wantContent)
+			}
+		})
+	}
+}
+
+func TestGenerateScriptWithVisuals(t *testing.T) {
+	tests := []struct {
+		name           string
+		topic          string
+		scriptLength   int
+		hookDuration   int
+		serverResponse response
+		serverStatus   int
+		wantErr        bool
+		wantScript     string
+		wantVisuals    int
+	}{
+		{
+			name:         "successfulWithVisuals",
+			topic:        "space",
+			scriptLength: 30,
+			hookDuration: 5,
+			serverResponse: response{
+				ID: "vis-123",
+				Choices: []choice{
+					{Message: Message{Role: "assistant", Content: `{"script": "Space is vast.", "visuals": [{"search_query": "galaxy", "word_index": 2}]}`}},
+				},
+			},
+			serverStatus: http.StatusOK,
+			wantErr:      false,
+			wantScript:   "Space is vast.",
+			wantVisuals:  1,
+		},
+		{
+			name:         "markdownWrapped",
+			topic:        "nature",
+			scriptLength: 30,
+			hookDuration: 5,
+			serverResponse: response{
+				ID: "vis-456",
+				Choices: []choice{
+					{Message: Message{Role: "assistant", Content: "```json\n{\"script\": \"Nature is beautiful.\", \"visuals\": []}\n```"}},
+				},
+			},
+			serverStatus: http.StatusOK,
+			wantErr:      false,
+			wantScript:   "Nature is beautiful.",
+			wantVisuals:  0,
+		},
+		{
+			name:         "invalidJSON",
+			topic:        "tech",
+			scriptLength: 30,
+			hookDuration: 5,
+			serverResponse: response{
+				ID: "vis-789",
+				Choices: []choice{
+					{Message: Message{Role: "assistant", Content: "Just a plain script about tech."}},
+				},
+			},
+			serverStatus: http.StatusOK,
+			wantErr:      false,
+			wantScript:   "Just a plain script about tech.",
+			wantVisuals:  0,
+		},
+		{
+			name:         "serverError",
+			topic:        "test",
+			scriptLength: 30,
+			hookDuration: 5,
+			serverStatus: http.StatusInternalServerError,
+			wantErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.serverStatus)
+				if tt.serverStatus == http.StatusOK {
+					_ = json.NewEncoder(w).Encode(tt.serverResponse)
+				}
+			}))
+			defer server.Close()
+
+			client := NewClient("test-key", Options{Model: "deepseek-chat"})
+			client.baseURL = server.URL
+
+			ctx := context.Background()
+			got, err := client.GenerateScriptWithVisuals(ctx, tt.topic, tt.scriptLength, tt.hookDuration)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GenerateScriptWithVisuals() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr {
+				if got.Script != tt.wantScript {
+					t.Errorf("Script = %q, want %q", got.Script, tt.wantScript)
+				}
+				if len(got.Visuals) != tt.wantVisuals {
+					t.Errorf("Visuals count = %d, want %d", len(got.Visuals), tt.wantVisuals)
+				}
+			}
+		})
+	}
+}
+
+func TestCleanJSONResponse(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "plainJSON",
+			input: `{"script": "test"}`,
+			want:  `{"script": "test"}`,
+		},
+		{
+			name:  "markdownJSONBlock",
+			input: "```json\n{\"script\": \"test\"}\n```",
+			want:  `{"script": "test"}`,
+		},
+		{
+			name:  "markdownPlainBlock",
+			input: "```\n{\"script\": \"test\"}\n```",
+			want:  `{"script": "test"}`,
+		},
+		{
+			name:  "withWhitespace",
+			input: "  \n```json\n{\"script\": \"test\"}\n```  \n",
+			want:  `{"script": "test"}`,
+		},
+		{
+			name:  "emptyString",
+			input: "",
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cleanJSONResponse(tt.input)
+			if got != tt.want {
+				t.Errorf("cleanJSONResponse() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVisualCueStruct(t *testing.T) {
+	cue := VisualCue{
+		SearchQuery: "cute cat",
+		WordIndex:   5,
+	}
+
+	if cue.SearchQuery != "cute cat" {
+		t.Errorf("SearchQuery = %q, want %q", cue.SearchQuery, "cute cat")
+	}
+	if cue.WordIndex != 5 {
+		t.Errorf("WordIndex = %d, want %d", cue.WordIndex, 5)
+	}
+}
