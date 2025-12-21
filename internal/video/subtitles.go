@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"craftstory/internal/elevenlabs"
+	"craftstory/internal/tts"
 )
 
 type Subtitle struct {
@@ -16,7 +16,7 @@ type Subtitle struct {
 type SubtitleGenerator struct {
 	fontName     string
 	fontSize     int
-	primaryColor string // ASS format: &HAABBGGRR
+	primaryColor string
 	outlineColor string
 	outlineSize  int
 	shadowSize   int
@@ -26,7 +26,7 @@ type SubtitleGenerator struct {
 type SubtitleOptions struct {
 	FontName     string
 	FontSize     int
-	PrimaryColor string // hex color like "#FFFFFF" or ASS format
+	PrimaryColor string
 	OutlineColor string
 	OutlineSize  int
 	ShadowSize   int
@@ -69,7 +69,6 @@ func toASSColor(color string) string {
 	if strings.HasPrefix(color, "&H") {
 		return color
 	}
-	// Convert #RRGGBB to &H00BBGGRR (ASS format with alpha)
 	color = strings.TrimPrefix(color, "#")
 	if len(color) == 6 {
 		r := color[0:2]
@@ -80,7 +79,7 @@ func toASSColor(color string) string {
 	return "&H00FFFFFF"
 }
 
-func (g *SubtitleGenerator) GenerateFromTimings(timings []elevenlabs.WordTiming) []Subtitle {
+func (g *SubtitleGenerator) GenerateFromTimings(timings []tts.WordTiming) []Subtitle {
 	subtitles := make([]Subtitle, 0, len(timings))
 	for _, t := range timings {
 		subtitles = append(subtitles, Subtitle{
@@ -125,7 +124,6 @@ func (g *SubtitleGenerator) ToASS(subtitles []Subtitle) string {
 	sb.WriteString("PlayResY: 1920\n")
 	sb.WriteString("\n")
 
-	// Bold: -1 = true, 0 = false in ASS format
 	boldVal := 0
 	if g.bold {
 		boldVal = -1
@@ -133,7 +131,6 @@ func (g *SubtitleGenerator) ToASS(subtitles []Subtitle) string {
 
 	sb.WriteString("[V4+ Styles]\n")
 	sb.WriteString("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
-	// Style format: BorderStyle=1 (outline+shadow), Alignment=5 (center middle)
 	sb.WriteString(fmt.Sprintf("Style: Default,%s,%d,%s,%s,%s,&H80000000,%d,0,0,0,100,100,0,0,1,%d,%d,5,10,10,50,1\n",
 		g.fontName, g.fontSize, g.primaryColor, g.primaryColor, g.outlineColor, boldVal, g.outlineSize, g.shadowSize))
 	sb.WriteString("\n")

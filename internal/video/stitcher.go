@@ -7,17 +7,17 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"craftstory/internal/elevenlabs"
+	"craftstory/internal/tts"
 )
 
 type AudioSegment struct {
 	Audio   []byte
-	Timings []elevenlabs.WordTiming
+	Timings []tts.WordTiming
 }
 
 type StitchedAudio struct {
 	Data     []byte
-	Timings  []elevenlabs.WordTiming
+	Timings  []tts.WordTiming
 	Duration float64
 }
 
@@ -110,13 +110,13 @@ func (s *AudioStitcher) Stitch(ctx context.Context, segments []AudioSegment) (*S
 	}, nil
 }
 
-func (s *AudioStitcher) adjustTimings(segments []AudioSegment) ([]elevenlabs.WordTiming, float64) {
-	var allTimings []elevenlabs.WordTiming
+func (s *AudioStitcher) adjustTimings(segments []AudioSegment) ([]tts.WordTiming, float64) {
+	var allTimings []tts.WordTiming
 	var offset float64
 
 	for _, seg := range segments {
 		for _, t := range seg.Timings {
-			allTimings = append(allTimings, elevenlabs.WordTiming{
+			allTimings = append(allTimings, tts.WordTiming{
 				Word:      t.Word,
 				StartTime: t.StartTime + offset,
 				EndTime:   t.EndTime + offset,

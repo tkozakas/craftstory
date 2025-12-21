@@ -18,26 +18,6 @@ const (
 	minImageHeight = 300
 )
 
-// Domains known to serve placeholder/error images or block downloads
-var blockedDomains = []string{
-	"lookaside.instagram.com",
-	"instagram.com",
-	"fbcdn.net",
-	"pinterest.com",
-	"pinimg.com",
-	"tiktok.com",
-	"twitter.com",
-	"x.com",
-	"shutterstock.com",
-	"gettyimages.com",
-	"alamy.com",
-	"dreamstime.com",
-	"istockphoto.com",
-	"123rf.com",
-	"depositphotos.com",
-	"stock.adobe.com",
-}
-
 type Client struct {
 	apiKey     string
 	engineID   string
@@ -67,6 +47,25 @@ type imageInfo struct {
 	ThumbnailLink string `json:"thumbnailLink"`
 	Width         int    `json:"width"`
 	Height        int    `json:"height"`
+}
+
+var blockedDomains = []string{
+	"lookaside.instagram.com",
+	"instagram.com",
+	"fbcdn.net",
+	"pinterest.com",
+	"pinimg.com",
+	"tiktok.com",
+	"twitter.com",
+	"x.com",
+	"shutterstock.com",
+	"gettyimages.com",
+	"alamy.com",
+	"dreamstime.com",
+	"istockphoto.com",
+	"123rf.com",
+	"depositphotos.com",
+	"stock.adobe.com",
 }
 
 func NewClient(apiKey, engineID string) *Client {

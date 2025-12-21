@@ -2,10 +2,10 @@ package app
 
 import (
 	"craftstory/internal/deepseek"
-	"craftstory/internal/elevenlabs"
 	"craftstory/internal/imagesearch"
 	"craftstory/internal/reddit"
 	"craftstory/internal/storage"
+	"craftstory/internal/tts"
 	"craftstory/internal/uploader"
 	"craftstory/internal/video"
 	"craftstory/pkg/config"
@@ -14,7 +14,7 @@ import (
 type Service struct {
 	cfg         *config.Config
 	deepseek    *deepseek.Client
-	elevenlabs  *elevenlabs.Client
+	tts         tts.Provider
 	uploader    uploader.Uploader
 	assembler   *video.Assembler
 	storage     *storage.LocalStorage
@@ -25,7 +25,7 @@ type Service struct {
 func NewService(
 	cfg *config.Config,
 	deepseek *deepseek.Client,
-	elevenlabs *elevenlabs.Client,
+	ttsProvider tts.Provider,
 	up uploader.Uploader,
 	assembler *video.Assembler,
 	storage *storage.LocalStorage,
@@ -35,7 +35,7 @@ func NewService(
 	return &Service{
 		cfg:         cfg,
 		deepseek:    deepseek,
-		elevenlabs:  elevenlabs,
+		tts:         ttsProvider,
 		uploader:    up,
 		assembler:   assembler,
 		storage:     storage,
@@ -52,8 +52,8 @@ func (s *Service) DeepSeek() *deepseek.Client {
 	return s.deepseek
 }
 
-func (s *Service) ElevenLabs() *elevenlabs.Client {
-	return s.elevenlabs
+func (s *Service) TTS() tts.Provider {
+	return s.tts
 }
 
 func (s *Service) Uploader() uploader.Uploader {

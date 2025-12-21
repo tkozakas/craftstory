@@ -61,6 +61,9 @@ Put vertical videos (9:16) in `./assets/backgrounds/`
 ## Usage
 
 ```bash
+# Add voice sample from YouTube
+task add-voice -- spongebob "https://youtube.com/watch?v=xxx" 00:00:30 15
+
 # Generate video
 task run -- generate -topic "weird history fact"
 

@@ -5,9 +5,17 @@ tasks:
     cmds:
       - go run ./cmd/craftstory {{.CLI_ARGS}}
 
+  build:
+    cmds:
+      - go build -o bin/craftstory ./cmd/craftstory
+
   test:
     cmds:
-      - go test ./...
+      - go test -race -cover ./...
+
+  test-integration:
+    cmds:
+      - go test -race -tags=integration ./...
 
   lint:
     cmds:
@@ -16,13 +24,24 @@ tasks:
   check:
     cmds:
       - golangci-lint run
-      - go test ./...
+      - go test -race ./...
 
-  docker-run:
+  xtts:
+    desc: Start XTTS server
     cmds:
-      - docker build -t craftstory .
-      - docker run --env-file .env craftstory {{.CLI_ARGS}}
+      - docker compose up -d
 
-  docker-down:
+  xtts:down:
+    desc: Stop XTTS server
     cmds:
-      - docker rm -f craftstory 2>/dev/null || true
+      - docker compose down
+
+  xtts:logs:
+    desc: Show XTTS server logs
+    cmds:
+      - docker compose logs -f
+
+  add-voice:
+    desc: Add voice sample from YouTube for a character
+    cmds:
+      - ./scripts/add-voice.sh {{.CLI_ARGS}}

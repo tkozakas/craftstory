@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"craftstory/internal/elevenlabs"
+	"craftstory/internal/tts"
 )
 
 func TestNewAudioStitcher(t *testing.T) {
@@ -29,14 +29,14 @@ func TestAdjustTimings(t *testing.T) {
 		segments     []AudioSegment
 		wantTimings  int
 		wantDuration float64
-		wantFirst    elevenlabs.WordTiming
-		wantLast     elevenlabs.WordTiming
+		wantFirst    tts.WordTiming
+		wantLast     tts.WordTiming
 	}{
 		{
 			name: "singleSegment",
 			segments: []AudioSegment{
 				{
-					Timings: []elevenlabs.WordTiming{
+					Timings: []tts.WordTiming{
 						{Word: "Hello", StartTime: 0, EndTime: 0.5},
 						{Word: "World", StartTime: 0.5, EndTime: 1.0},
 					},
@@ -44,20 +44,20 @@ func TestAdjustTimings(t *testing.T) {
 			},
 			wantTimings:  2,
 			wantDuration: 1.0,
-			wantFirst:    elevenlabs.WordTiming{Word: "Hello", StartTime: 0, EndTime: 0.5},
-			wantLast:     elevenlabs.WordTiming{Word: "World", StartTime: 0.5, EndTime: 1.0},
+			wantFirst:    tts.WordTiming{Word: "Hello", StartTime: 0, EndTime: 0.5},
+			wantLast:     tts.WordTiming{Word: "World", StartTime: 0.5, EndTime: 1.0},
 		},
 		{
 			name: "twoSegments",
 			segments: []AudioSegment{
 				{
-					Timings: []elevenlabs.WordTiming{
+					Timings: []tts.WordTiming{
 						{Word: "First", StartTime: 0, EndTime: 0.5},
 						{Word: "Part", StartTime: 0.5, EndTime: 1.0},
 					},
 				},
 				{
-					Timings: []elevenlabs.WordTiming{
+					Timings: []tts.WordTiming{
 						{Word: "Second", StartTime: 0, EndTime: 0.5},
 						{Word: "Part", StartTime: 0.5, EndTime: 1.0},
 					},
@@ -65,24 +65,24 @@ func TestAdjustTimings(t *testing.T) {
 			},
 			wantTimings:  4,
 			wantDuration: 2.0,
-			wantFirst:    elevenlabs.WordTiming{Word: "First", StartTime: 0, EndTime: 0.5},
-			wantLast:     elevenlabs.WordTiming{Word: "Part", StartTime: 1.5, EndTime: 2.0},
+			wantFirst:    tts.WordTiming{Word: "First", StartTime: 0, EndTime: 0.5},
+			wantLast:     tts.WordTiming{Word: "Part", StartTime: 1.5, EndTime: 2.0},
 		},
 		{
 			name: "threeSegments",
 			segments: []AudioSegment{
-				{Timings: []elevenlabs.WordTiming{{Word: "A", StartTime: 0, EndTime: 1.0}}},
-				{Timings: []elevenlabs.WordTiming{{Word: "B", StartTime: 0, EndTime: 1.0}}},
-				{Timings: []elevenlabs.WordTiming{{Word: "C", StartTime: 0, EndTime: 1.0}}},
+				{Timings: []tts.WordTiming{{Word: "A", StartTime: 0, EndTime: 1.0}}},
+				{Timings: []tts.WordTiming{{Word: "B", StartTime: 0, EndTime: 1.0}}},
+				{Timings: []tts.WordTiming{{Word: "C", StartTime: 0, EndTime: 1.0}}},
 			},
 			wantTimings:  3,
 			wantDuration: 3.0,
-			wantFirst:    elevenlabs.WordTiming{Word: "A", StartTime: 0, EndTime: 1.0},
-			wantLast:     elevenlabs.WordTiming{Word: "C", StartTime: 2.0, EndTime: 3.0},
+			wantFirst:    tts.WordTiming{Word: "A", StartTime: 0, EndTime: 1.0},
+			wantLast:     tts.WordTiming{Word: "C", StartTime: 2.0, EndTime: 3.0},
 		},
 		{
 			name:         "emptySegments",
-			segments:     []AudioSegment{{Timings: []elevenlabs.WordTiming{}}},
+			segments:     []AudioSegment{{Timings: []tts.WordTiming{}}},
 			wantTimings:  0,
 			wantDuration: 0,
 		},
@@ -126,7 +126,7 @@ func TestStitchSingleSegment(t *testing.T) {
 
 	segment := AudioSegment{
 		Audio: []byte("fake audio data"),
-		Timings: []elevenlabs.WordTiming{
+		Timings: []tts.WordTiming{
 			{Word: "Test", StartTime: 0, EndTime: 1.0},
 		},
 	}
@@ -152,7 +152,7 @@ func TestStitchSingleSegmentNoTimings(t *testing.T) {
 
 	segment := AudioSegment{
 		Audio:   []byte("fake audio data"),
-		Timings: []elevenlabs.WordTiming{},
+		Timings: []tts.WordTiming{},
 	}
 
 	result, err := stitcher.Stitch(t.Context(), []AudioSegment{segment})
@@ -178,11 +178,11 @@ func TestStitchMultipleSegmentsWithFFmpeg(t *testing.T) {
 	segments := []AudioSegment{
 		{
 			Audio:   silentMP3,
-			Timings: []elevenlabs.WordTiming{{Word: "Hello", StartTime: 0, EndTime: 0.1}},
+			Timings: []tts.WordTiming{{Word: "Hello", StartTime: 0, EndTime: 0.1}},
 		},
 		{
 			Audio:   silentMP3,
-			Timings: []elevenlabs.WordTiming{{Word: "World", StartTime: 0, EndTime: 0.1}},
+			Timings: []tts.WordTiming{{Word: "World", StartTime: 0, EndTime: 0.1}},
 		},
 	}
 
@@ -212,8 +212,8 @@ func TestStitchWriteSegmentError(t *testing.T) {
 	stitcher := NewAudioStitcher("/nonexistent/directory")
 
 	segments := []AudioSegment{
-		{Audio: []byte("data1"), Timings: []elevenlabs.WordTiming{{Word: "A", StartTime: 0, EndTime: 1}}},
-		{Audio: []byte("data2"), Timings: []elevenlabs.WordTiming{{Word: "B", StartTime: 0, EndTime: 1}}},
+		{Audio: []byte("data1"), Timings: []tts.WordTiming{{Word: "A", StartTime: 0, EndTime: 1}}},
+		{Audio: []byte("data2"), Timings: []tts.WordTiming{{Word: "B", StartTime: 0, EndTime: 1}}},
 	}
 
 	_, err := stitcher.Stitch(context.Background(), segments)
@@ -231,8 +231,8 @@ func TestStitchFFmpegError(t *testing.T) {
 	stitcher := NewAudioStitcher(tmpDir)
 
 	segments := []AudioSegment{
-		{Audio: []byte("not valid mp3"), Timings: []elevenlabs.WordTiming{{Word: "A", StartTime: 0, EndTime: 1}}},
-		{Audio: []byte("also invalid"), Timings: []elevenlabs.WordTiming{{Word: "B", StartTime: 0, EndTime: 1}}},
+		{Audio: []byte("not valid mp3"), Timings: []tts.WordTiming{{Word: "A", StartTime: 0, EndTime: 1}}},
+		{Audio: []byte("also invalid"), Timings: []tts.WordTiming{{Word: "B", StartTime: 0, EndTime: 1}}},
 	}
 
 	_, err := stitcher.Stitch(context.Background(), segments)
@@ -263,8 +263,8 @@ func TestStitchUsesAbsolutePaths(t *testing.T) {
 	silentMP3 := createSilentMP3(t)
 
 	segments := []AudioSegment{
-		{Audio: silentMP3, Timings: []elevenlabs.WordTiming{{Word: "A", StartTime: 0, EndTime: 0.1}}},
-		{Audio: silentMP3, Timings: []elevenlabs.WordTiming{{Word: "B", StartTime: 0, EndTime: 0.1}}},
+		{Audio: silentMP3, Timings: []tts.WordTiming{{Word: "A", StartTime: 0, EndTime: 0.1}}},
+		{Audio: silentMP3, Timings: []tts.WordTiming{{Word: "B", StartTime: 0, EndTime: 0.1}}},
 	}
 
 	result, err := stitcher.Stitch(context.Background(), segments)

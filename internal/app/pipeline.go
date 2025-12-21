@@ -16,12 +16,11 @@ import (
 
 	"craftstory/internal/deepseek"
 	"craftstory/internal/dialogue"
-	"craftstory/internal/elevenlabs"
+	"craftstory/internal/tts"
 	"craftstory/internal/uploader"
 	"craftstory/internal/video"
+	"craftstory/pkg/config"
 )
-
-var sanitizeRegex = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
 
 type Pipeline struct {
 	svc *Service
@@ -54,6 +53,11 @@ type session struct {
 	baseDir   string
 	timestamp time.Time
 }
+
+var (
+	sanitizeRegex  = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
+	wordSplitRegex = regexp.MustCompile(`\s+`)
+)
 
 func newSession(baseDir string) *session {
 	ts := time.Now()
@@ -105,12 +109,6 @@ func sanitizeForPath(s string) string {
 	return s
 }
 
-// wordSplitRegex matches word boundaries for splitting script into words.
-var wordSplitRegex = regexp.MustCompile(`\s+`)
-
-// findKeywordIndex searches for a keyword in the script and returns the 0-based word index.
-// It performs case-insensitive matching and handles punctuation attached to words.
-// Returns -1 if the keyword is not found.
 func findKeywordIndex(script, keyword string) int {
 	if keyword == "" {
 		return -1
@@ -120,16 +118,13 @@ func findKeywordIndex(script, keyword string) int {
 	keywordLower := strings.ToLower(keyword)
 	keywordWords := wordSplitRegex.Split(keywordLower, -1)
 
-	// Single word keyword
 	if len(keywordWords) == 1 {
 		for i, word := range words {
-			// Strip common punctuation from word for comparison
 			cleanWord := strings.ToLower(strings.Trim(word, ".,!?;:'\"()[]{}"))
 			if cleanWord == keywordLower {
 				return i
 			}
 		}
-		// Try partial match (keyword contained in word)
 		for i, word := range words {
 			cleanWord := strings.ToLower(strings.Trim(word, ".,!?;:'\"()[]{}"))
 			if strings.Contains(cleanWord, keywordLower) {
@@ -137,7 +132,6 @@ func findKeywordIndex(script, keyword string) int {
 			}
 		}
 	} else {
-		// Multi-word keyword - find first word then verify sequence
 		for i := 0; i <= len(words)-len(keywordWords); i++ {
 			match := true
 			for j, kw := range keywordWords {
@@ -226,7 +220,7 @@ func (p *Pipeline) generateSingleVoice(ctx context.Context, topic string) (*Gene
 	}
 
 	slog.Info("generating speech", "script_length", len(script))
-	speechResult, err := p.svc.ElevenLabs().GenerateSpeechWithTimings(ctx, script)
+	speechResult, err := p.svc.TTS().GenerateSpeechWithTimings(ctx, script)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate speech: %w", err)
 	}
@@ -270,7 +264,7 @@ func (p *Pipeline) generateSingleVoice(ctx context.Context, topic string) (*Gene
 	}, nil
 }
 
-func (p *Pipeline) fetchVisualImagesWithSession(ctx context.Context, sess *session, script string, visuals []deepseek.VisualCue, timings []elevenlabs.WordTiming) []video.ImageOverlay {
+func (p *Pipeline) fetchVisualImagesWithSession(ctx context.Context, sess *session, script string, visuals []deepseek.VisualCue, timings []tts.WordTiming) []video.ImageOverlay {
 	cfg := p.svc.Config()
 	overlays := make([]video.ImageOverlay, 0, len(visuals))
 
@@ -419,15 +413,12 @@ func (p *Pipeline) generateConversation(ctx context.Context, topic string) (*Gen
 	cfg := p.svc.Config()
 	sess := newSession(cfg.Video.OutputDir)
 
-	speakerNames := make([]string, len(cfg.ElevenLabs.Voices))
-	voiceMap := make(map[string]elevenlabs.VoiceConfig)
-	for i, v := range cfg.ElevenLabs.Voices {
+	voices := p.getConversationVoices(cfg)
+	speakerNames := make([]string, len(voices))
+	voiceMap := make(map[string]tts.VoiceConfig)
+	for i, v := range voices {
 		speakerNames[i] = v.Name
-		voiceMap[v.Name] = elevenlabs.VoiceConfig{
-			ID:         v.ID,
-			Stability:  v.Stability,
-			Similarity: v.Similarity,
-		}
+		voiceMap[v.Name] = v
 	}
 
 	slog.Info("generating conversation script", "topic", topic, "speakers", speakerNames)
@@ -463,7 +454,7 @@ func (p *Pipeline) generateConversation(ctx context.Context, topic string) (*Gen
 		}
 
 		slog.Info("generating speech for line", "line", i+1, "speaker", line.Speaker)
-		result, err := p.svc.ElevenLabs().GenerateSpeechWithVoice(ctx, line.Text, voice)
+		result, err := p.svc.TTS().GenerateSpeechWithVoice(ctx, line.Text, voice)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate speech for line %d: %w", i+1, err)
 		}
@@ -520,6 +511,26 @@ func (p *Pipeline) generateConversation(ctx context.Context, topic string) (*Gen
 		VideoPath:     result.OutputPath,
 		Duration:      result.Duration,
 	}, nil
+}
+
+func (p *Pipeline) getConversationVoices(cfg *config.Config) []tts.VoiceConfig {
+	var voices []config.Voice
+	if cfg.TTS.Provider == "xtts" && len(cfg.XTTS.Voices) > 0 {
+		voices = cfg.XTTS.Voices
+	} else {
+		voices = cfg.ElevenLabs.Voices
+	}
+
+	result := make([]tts.VoiceConfig, len(voices))
+	for i, v := range voices {
+		result[i] = tts.VoiceConfig{
+			ID:         v.ID,
+			Name:       v.Name,
+			Stability:  v.Stability,
+			Similarity: v.Similarity,
+		}
+	}
+	return result
 }
 
 func (p *Pipeline) generateVisualCues(ctx context.Context, script string) []deepseek.VisualCue {
@@ -708,7 +719,7 @@ func estimateAudioDuration(script string) float64 {
 	return float64(words) / wordsPerSecond
 }
 
-func getAudioDuration(timings []elevenlabs.WordTiming) float64 {
+func getAudioDuration(timings []tts.WordTiming) float64 {
 	if len(timings) == 0 {
 		return 0
 	}
@@ -739,8 +750,6 @@ func isValidImage(data []byte) bool {
 	return err == nil
 }
 
-// enforceImageConstraints filters overlays to ensure minimum gap between images.
-// It keeps images that are at least MinGap seconds apart (end of previous to start of next).
 func (p *Pipeline) enforceImageConstraints(overlays []video.ImageOverlay) []video.ImageOverlay {
 	if len(overlays) <= 1 {
 		return overlays

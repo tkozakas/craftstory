@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"craftstory/internal/elevenlabs"
 	"craftstory/internal/storage"
+	"craftstory/internal/tts"
 )
 
 const (
@@ -66,8 +66,8 @@ type AssembleRequest struct {
 	AudioPath     string
 	AudioDuration float64
 	Script        string
-	OutputPath    string // optional, if empty will auto-generate
-	WordTimings   []elevenlabs.WordTiming
+	OutputPath    string
+	WordTimings   []tts.WordTiming
 	ImageOverlays []ImageOverlay
 }
 
@@ -170,7 +170,6 @@ func (a *Assembler) Assemble(ctx context.Context, req AssembleRequest) (*Assembl
 	musicPath := a.selectMusicTrack()
 	filterComplex := a.buildFilterComplex(assPath, req.ImageOverlays, musicPath, req.AudioDuration)
 
-	// Build main content video
 	mainVideoPath := outputPath
 	needsConcat := a.introPath != "" || a.outroPath != ""
 	if needsConcat {
@@ -187,7 +186,6 @@ func (a *Assembler) Assemble(ctx context.Context, req AssembleRequest) (*Assembl
 
 	totalDuration := req.AudioDuration
 
-	// Concatenate intro/outro if configured
 	if needsConcat {
 		introDur, outroDur, err := a.concatIntroOutro(ctx, mainVideoPath, outputPath)
 		if err != nil {
@@ -357,9 +355,9 @@ func (a *Assembler) buildAudioFilter(musicPath string, duration float64) string 
 }
 
 func (a *Assembler) imageInputIndex(imageIdx int, musicPath string) int {
-	base := 2 // 0=video, 1=voice audio
+	base := 2
 	if musicPath != "" {
-		base = 3 // 0=video, 1=voice audio, 2=music
+		base = 3
 	}
 	return base + imageIdx
 }
@@ -369,7 +367,6 @@ func (a *Assembler) concatIntroOutro(ctx context.Context, mainVideoPath, outputP
 	var clips []string
 	var introDur, outroDur float64
 
-	// Prepare intro if exists
 	if a.introPath != "" {
 		if _, err := os.Stat(a.introPath); err == nil {
 			introClip, dur, err := a.prepareClip(ctx, a.introPath, a.introDuration, outputDir, "intro")
@@ -384,10 +381,8 @@ func (a *Assembler) concatIntroOutro(ctx context.Context, mainVideoPath, outputP
 		}
 	}
 
-	// Add main video
 	clips = append(clips, mainVideoPath)
 
-	// Prepare outro if exists
 	if a.outroPath != "" {
 		if _, err := os.Stat(a.outroPath); err == nil {
 			outroClip, dur, err := a.prepareClip(ctx, a.outroPath, a.outroDuration, outputDir, "outro")
@@ -402,12 +397,10 @@ func (a *Assembler) concatIntroOutro(ctx context.Context, mainVideoPath, outputP
 		}
 	}
 
-	// If only main video, just copy it
 	if len(clips) == 1 {
 		return 0, 0, nil
 	}
 
-	// Create concat list
 	listPath := filepath.Join(outputDir, fmt.Sprintf("concat_%d.txt", time.Now().UnixNano()))
 	var listContent string
 	for _, clip := range clips {
@@ -422,7 +415,6 @@ func (a *Assembler) concatIntroOutro(ctx context.Context, mainVideoPath, outputP
 	}
 	defer func() { _ = os.Remove(listPath) }()
 
-	// Concatenate using ffmpeg
 	args := []string{
 		"-y",
 		"-f", "concat",
@@ -446,13 +438,11 @@ func (a *Assembler) prepareClip(ctx context.Context, clipPath string, maxDuratio
 		return "", 0, err
 	}
 
-	// If no duration limit or clip is shorter, use as-is but re-encode for compatibility
 	targetDuration := duration
 	if maxDuration > 0 && duration > maxDuration {
 		targetDuration = maxDuration
 	}
 
-	// Re-encode to ensure same codec/format for concat
 	outputClip := filepath.Join(outputDir, fmt.Sprintf("%s_%d.mp4", prefix, time.Now().UnixNano()))
 
 	args := []string{

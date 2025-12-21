@@ -11,7 +11,6 @@ import (
 const (
 	defaultConfigPath       = "config.yaml"
 	defaultBackgroundDir    = "./assets/backgrounds"
-	defaultCharactersDir    = "./assets/characters"
 	defaultOutputDir        = "./output"
 	defaultCacheDir         = "./.cache"
 	defaultMusicDir         = "./assets/music"
@@ -66,6 +65,7 @@ type Config struct {
 
 	DeepSeek   DeepSeekConfig   `yaml:"deepseek"`
 	ElevenLabs ElevenLabsConfig `yaml:"elevenlabs"`
+	XTTS       XTTSConfig       `yaml:"xtts"`
 	TTS        TTSConfig        `yaml:"tts"`
 	Content    ContentConfig    `yaml:"content"`
 	Video      VideoConfig      `yaml:"video"`
@@ -91,10 +91,14 @@ type ElevenLabsConfig struct {
 }
 
 type TTSConfig struct {
-	Provider      string `yaml:"provider"`
-	XTTSServerURL string `yaml:"xtts_server_url"`
-	CharactersDir string `yaml:"characters_dir"`
-	Language      string `yaml:"language"`
+	Provider string `yaml:"provider"` // "elevenlabs" or "xtts"
+}
+
+type XTTSConfig struct {
+	ServerURL string  `yaml:"server_url"`
+	Speaker   string  `yaml:"speaker"`
+	Language  string  `yaml:"language"`
+	Voices    []Voice `yaml:"voices"`
 }
 
 type ContentConfig struct {
@@ -201,6 +205,7 @@ func applyDefaults(cfg *Config) {
 	applyDeepSeekDefaults(cfg)
 	applyElevenLabsDefaults(cfg)
 	applyTTSDefaults(cfg)
+	applyXTTSDefaults(cfg)
 	applyContentDefaults(cfg)
 	applyVideoDefaults(cfg)
 	applyMusicDefaults(cfg)
@@ -238,14 +243,14 @@ func applyTTSDefaults(cfg *Config) {
 	if cfg.TTS.Provider == "" {
 		cfg.TTS.Provider = defaultTTSProvider
 	}
-	if cfg.TTS.XTTSServerURL == "" {
-		cfg.TTS.XTTSServerURL = defaultXTTSServerURL
+}
+
+func applyXTTSDefaults(cfg *Config) {
+	if cfg.XTTS.ServerURL == "" {
+		cfg.XTTS.ServerURL = defaultXTTSServerURL
 	}
-	if cfg.TTS.CharactersDir == "" {
-		cfg.TTS.CharactersDir = defaultCharactersDir
-	}
-	if cfg.TTS.Language == "" {
-		cfg.TTS.Language = defaultLanguage
+	if cfg.XTTS.Language == "" {
+		cfg.XTTS.Language = defaultLanguage
 	}
 }
 

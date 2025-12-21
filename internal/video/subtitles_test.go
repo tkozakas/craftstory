@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"craftstory/internal/elevenlabs"
+	"craftstory/internal/tts"
 )
 
 func TestGenerate(t *testing.T) {
@@ -194,7 +194,7 @@ func TestSubtitleWords(t *testing.T) {
 func TestGenerateFromTimings(t *testing.T) {
 	gen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
 
-	timings := []elevenlabs.WordTiming{
+	timings := []tts.WordTiming{
 		{Word: "Hello", StartTime: 0.0, EndTime: 0.5},
 		{Word: "world", StartTime: 0.6, EndTime: 1.1},
 	}

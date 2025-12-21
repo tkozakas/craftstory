@@ -16,11 +16,16 @@ elevenlabs:
       stability: 0.75
       similarity: 0.75
 
-tts:
-  provider: "elevenlabs"
-  xtts_server_url: "http://localhost:8020"
-  characters_dir: "./assets/characters"
+xtts:
+  server_url: "http://localhost:8020"
+  speaker: "spongebob"
   language: "en"
+  voices:
+    - name: "spongebob"
+    - name: "patrick"
+
+tts:
+  provider: "elevenlabs" # default, can be overridden with -provider flag
 
 content:
   script_length: 50

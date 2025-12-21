@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"craftstory/internal/elevenlabs"
+	"craftstory/internal/tts"
 	"craftstory/internal/uploader"
 	"craftstory/internal/video"
 	"craftstory/pkg/config"
@@ -46,8 +46,8 @@ func TestServiceGetters(t *testing.T) {
 		t.Error("DeepSeek() should return nil when set to nil")
 	}
 
-	if svc.ElevenLabs() != nil {
-		t.Error("ElevenLabs() should return nil when set to nil")
+	if svc.TTS() != nil {
+		t.Error("TTS() should return nil when set to nil")
 	}
 
 	if svc.Uploader() != nil {
@@ -189,12 +189,12 @@ func TestPipelineUpload(t *testing.T) {
 func TestGetAudioDuration(t *testing.T) {
 	tests := []struct {
 		name    string
-		timings []elevenlabs.WordTiming
+		timings []tts.WordTiming
 		want    float64
 	}{
 		{
 			name:    "emptyTimings",
-			timings: []elevenlabs.WordTiming{},
+			timings: []tts.WordTiming{},
 			want:    0,
 		},
 		{
@@ -204,14 +204,14 @@ func TestGetAudioDuration(t *testing.T) {
 		},
 		{
 			name: "singleWord",
-			timings: []elevenlabs.WordTiming{
+			timings: []tts.WordTiming{
 				{Word: "Hello", StartTime: 0, EndTime: 0.5},
 			},
 			want: 0.5,
 		},
 		{
 			name: "multipleWords",
-			timings: []elevenlabs.WordTiming{
+			timings: []tts.WordTiming{
 				{Word: "Hello", StartTime: 0, EndTime: 0.5},
 				{Word: "World", StartTime: 0.5, EndTime: 1.0},
 				{Word: "Test", StartTime: 1.0, EndTime: 1.5},
