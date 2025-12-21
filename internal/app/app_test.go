@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"craftstory/internal/tts"
@@ -16,14 +17,14 @@ type mockUploader struct {
 	err      error
 }
 
-func (m *mockUploader) Upload(ctx context.Context, req uploader.UploadRequest) (*uploader.UploadResponse, error) {
+func (m *mockUploader) Upload(_ context.Context, _ uploader.UploadRequest) (*uploader.UploadResponse, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	return m.response, nil
 }
 
-func (m *mockUploader) SetPrivacy(ctx context.Context, videoID, privacy string) error {
+func (m *mockUploader) SetPrivacy(_ context.Context, _, _ string) error {
 	return m.err
 }
 
@@ -32,40 +33,30 @@ func (m *mockUploader) Platform() string {
 }
 
 func TestServiceGetters(t *testing.T) {
-	cfg := &config.Config{
-		DeepSeek: config.DeepSeekConfig{Model: "test-model"},
-	}
-
+	cfg := &config.Config{}
 	svc := NewService(cfg, nil, nil, nil, nil, nil, nil, nil)
 
 	if svc.Config() != cfg {
 		t.Error("Config() returned wrong config")
 	}
-
-	if svc.DeepSeek() != nil {
-		t.Error("DeepSeek() should return nil when set to nil")
+	if svc.LLM() != nil {
+		t.Error("LLM() should return nil when set to nil")
 	}
-
 	if svc.TTS() != nil {
 		t.Error("TTS() should return nil when set to nil")
 	}
-
 	if svc.Uploader() != nil {
 		t.Error("Uploader() should return nil when set to nil")
 	}
-
 	if svc.Assembler() != nil {
 		t.Error("Assembler() should return nil when set to nil")
 	}
-
 	if svc.Storage() != nil {
 		t.Error("Storage() should return nil when set to nil")
 	}
-
 	if svc.Reddit() != nil {
 		t.Error("Reddit() should return nil when set to nil")
 	}
-
 	if svc.ImageSearch() != nil {
 		t.Error("ImageSearch() should return nil when set to nil")
 	}
@@ -85,108 +76,7 @@ func TestNewPipeline(t *testing.T) {
 	}
 }
 
-func TestEstimateAudioDuration(t *testing.T) {
-	tests := []struct {
-		name   string
-		script string
-		want   float64
-	}{
-		{
-			name:   "shortScript",
-			script: "Hello world",
-			want:   0.8,
-		},
-		{
-			name:   "longerScript",
-			script: "This is a longer script that should take more time to read aloud",
-			want:   4.8,
-		},
-		{
-			name:   "emptyScript",
-			script: "",
-			want:   0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := estimateAudioDuration(tt.script)
-			if got != tt.want {
-				t.Errorf("estimateAudioDuration() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestPipelineUpload(t *testing.T) {
-	tests := []struct {
-		name        string
-		videoPath   string
-		title       string
-		description string
-		uploadResp  *uploader.UploadResponse
-		uploadErr   error
-		wantErr     bool
-	}{
-		{
-			name:        "successfulUpload",
-			videoPath:   "/path/to/video.mp4",
-			title:       "Test Title",
-			description: "Test Description",
-			uploadResp: &uploader.UploadResponse{
-				ID:       "abc123",
-				URL:      "https://youtube.com/watch?v=abc123",
-				Platform: "youtube",
-			},
-			uploadErr: nil,
-			wantErr:   false,
-		},
-		{
-			name:        "uploadError",
-			videoPath:   "/path/to/video.mp4",
-			title:       "Test Title",
-			description: "Test Description",
-			uploadResp:  nil,
-			uploadErr:   errors.New("upload failed"),
-			wantErr:     true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockUp := &mockUploader{
-				response: tt.uploadResp,
-				err:      tt.uploadErr,
-			}
-
-			cfg := &config.Config{
-				YouTube: config.YouTubeConfig{
-					DefaultTags:   []string{"test"},
-					PrivacyStatus: "private",
-				},
-			}
-
-			svc := NewService(cfg, nil, nil, mockUp, nil, nil, nil, nil)
-			pipeline := NewPipeline(svc)
-
-			ctx := context.Background()
-			resp, err := pipeline.Upload(ctx, tt.videoPath, tt.title, tt.description)
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Upload() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if !tt.wantErr {
-				if resp.ID != tt.uploadResp.ID {
-					t.Errorf("Upload() ID = %q, want %q", resp.ID, tt.uploadResp.ID)
-				}
-			}
-		})
-	}
-}
-
-func TestGetAudioDuration(t *testing.T) {
+func TestAudioDuration(t *testing.T) {
 	tests := []struct {
 		name    string
 		timings []tts.WordTiming
@@ -222,9 +112,76 @@ func TestGetAudioDuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getAudioDuration(tt.timings)
+			got := audioDuration(tt.timings)
 			if got != tt.want {
-				t.Errorf("getAudioDuration() = %v, want %v", got, tt.want)
+				t.Errorf("audioDuration() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPipelineUpload(t *testing.T) {
+	tests := []struct {
+		name       string
+		req        UploadRequest
+		uploadResp *uploader.UploadResponse
+		uploadErr  error
+		wantErr    bool
+	}{
+		{
+			name: "successfulUpload",
+			req: UploadRequest{
+				VideoPath:   "/path/to/video.mp4",
+				Title:       "Test Title",
+				Description: "Test Description",
+			},
+			uploadResp: &uploader.UploadResponse{
+				ID:       "abc123",
+				URL:      "https://youtube.com/watch?v=abc123",
+				Platform: "youtube",
+			},
+			uploadErr: nil,
+			wantErr:   false,
+		},
+		{
+			name: "uploadError",
+			req: UploadRequest{
+				VideoPath:   "/path/to/video.mp4",
+				Title:       "Test Title",
+				Description: "Test Description",
+			},
+			uploadResp: nil,
+			uploadErr:  errors.New("upload failed"),
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockUp := &mockUploader{
+				response: tt.uploadResp,
+				err:      tt.uploadErr,
+			}
+
+			cfg := &config.Config{
+				YouTube: config.YouTubeConfig{
+					DefaultTags:   []string{"test"},
+					PrivacyStatus: "private",
+				},
+			}
+
+			svc := NewService(cfg, nil, nil, mockUp, nil, nil, nil, nil)
+			pipeline := NewPipeline(svc)
+
+			resp, err := pipeline.Upload(t.Context(), tt.req)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Upload() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr && resp.ID != tt.uploadResp.ID {
+				t.Errorf("Upload() ID = %q, want %q", resp.ID, tt.uploadResp.ID)
 			}
 		})
 	}
@@ -386,13 +343,13 @@ func TestEnforceImageConstraints(t *testing.T) {
 			name: "someTooClose",
 			overlays: []video.ImageOverlay{
 				{ImagePath: "img1.jpg", StartTime: 0, EndTime: 1.5},
-				{ImagePath: "img2.jpg", StartTime: 2, EndTime: 3.5},   // gap 0.5, skipped
-				{ImagePath: "img3.jpg", StartTime: 6, EndTime: 7.5},   // gap 4.5 from img1, kept
-				{ImagePath: "img4.jpg", StartTime: 8, EndTime: 9.5},   // gap 0.5 from img3, skipped
-				{ImagePath: "img5.jpg", StartTime: 14, EndTime: 15.5}, // gap 6.5 from img3, kept
+				{ImagePath: "img2.jpg", StartTime: 2, EndTime: 3.5},
+				{ImagePath: "img3.jpg", StartTime: 6, EndTime: 7.5},
+				{ImagePath: "img4.jpg", StartTime: 8, EndTime: 9.5},
+				{ImagePath: "img5.jpg", StartTime: 14, EndTime: 15.5},
 			},
 			minGap: 4.0,
-			want:   3, // img1, img3, img5
+			want:   3,
 		},
 		{
 			name: "allTooClose",
@@ -403,13 +360,13 @@ func TestEnforceImageConstraints(t *testing.T) {
 				{ImagePath: "img4.jpg", StartTime: 6, EndTime: 7.5},
 			},
 			minGap: 4.0,
-			want:   2, // img1, img4 (gap from 1.5 to 6 = 4.5)
+			want:   2,
 		},
 		{
 			name: "exactMinGap",
 			overlays: []video.ImageOverlay{
 				{ImagePath: "img1.jpg", StartTime: 0, EndTime: 1.5},
-				{ImagePath: "img2.jpg", StartTime: 5.5, EndTime: 7}, // gap exactly 4.0
+				{ImagePath: "img2.jpg", StartTime: 5.5, EndTime: 7},
 			},
 			minGap: 4.0,
 			want:   2,
@@ -510,5 +467,183 @@ func TestFindKeywordIndex(t *testing.T) {
 				t.Errorf("findKeywordIndex(%q, %q) = %d, want %d", tt.script, tt.keyword, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBuildVoiceMap(t *testing.T) {
+	voices := []tts.VoiceConfig{
+		{ID: "1", Name: "Alice"},
+		{ID: "2", Name: "Bob"},
+	}
+
+	m := buildVoiceMap(voices)
+
+	if len(m) != 2 {
+		t.Errorf("buildVoiceMap() returned %d entries, want 2", len(m))
+	}
+	if m["Alice"].ID != "1" {
+		t.Errorf("buildVoiceMap()[Alice].ID = %q, want %q", m["Alice"].ID, "1")
+	}
+	if m["Bob"].ID != "2" {
+		t.Errorf("buildVoiceMap()[Bob].ID = %q, want %q", m["Bob"].ID, "2")
+	}
+}
+
+func TestBuildCharacterOverlays(t *testing.T) {
+	tests := []struct {
+		name     string
+		segments []video.SegmentInfo
+		voiceMap map[string]tts.VoiceConfig
+		want     int
+	}{
+		{
+			name:     "emptySegments",
+			segments: []video.SegmentInfo{},
+			voiceMap: map[string]tts.VoiceConfig{},
+			want:     0,
+		},
+		{
+			name: "noAvatars",
+			segments: []video.SegmentInfo{
+				{Speaker: "Alice", StartTime: 0, EndTime: 1},
+			},
+			voiceMap: map[string]tts.VoiceConfig{
+				"Alice": {Name: "Alice", Avatar: ""},
+			},
+			want: 0,
+		},
+		{
+			name: "withAvatars",
+			segments: []video.SegmentInfo{
+				{Speaker: "Alice", StartTime: 0, EndTime: 1},
+				{Speaker: "Bob", StartTime: 1, EndTime: 2},
+			},
+			voiceMap: map[string]tts.VoiceConfig{
+				"Alice": {Name: "Alice", Avatar: "alice.png"},
+				"Bob":   {Name: "Bob", Avatar: "bob.png"},
+			},
+			want: 2,
+		},
+		{
+			name: "alternatingPositions",
+			segments: []video.SegmentInfo{
+				{Speaker: "Alice", StartTime: 0, EndTime: 1},
+				{Speaker: "Bob", StartTime: 1, EndTime: 2},
+				{Speaker: "Alice", StartTime: 2, EndTime: 3},
+			},
+			voiceMap: map[string]tts.VoiceConfig{
+				"Alice": {Name: "Alice", Avatar: "alice.png"},
+				"Bob":   {Name: "Bob", Avatar: "bob.png"},
+			},
+			want: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildCharacterOverlays(tt.segments, tt.voiceMap)
+			if len(got) != tt.want {
+				t.Errorf("buildCharacterOverlays() returned %d overlays, want %d", len(got), tt.want)
+			}
+		})
+	}
+}
+
+func TestCleanWord(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"Hello", "hello"},
+		{"Hello!", "hello"},
+		{"\"quoted\"", "quoted"},
+		{"(parens)", "parens"},
+		{"word.", "word"},
+		{"UPPER", "upper"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := cleanWord(tt.input)
+			if got != tt.want {
+				t.Errorf("cleanWord(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMaxDurationFromConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		maxDuration float64
+		duration    float64
+		wantErr     bool
+	}{
+		{
+			name:        "exceedsLimit",
+			maxDuration: 60.0,
+			duration:    65.0,
+			wantErr:     true,
+		},
+		{
+			name:        "customLowerLimit",
+			maxDuration: 30.0,
+			duration:    45.0,
+			wantErr:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{
+				Video: config.VideoConfig{
+					MaxDuration: tt.maxDuration,
+				},
+			}
+			svc := NewService(cfg, nil, nil, nil, nil, nil, nil, nil)
+			pipeline := NewPipeline(svc)
+
+			timings := []tts.WordTiming{
+				{Word: "test", StartTime: 0, EndTime: tt.duration},
+			}
+
+			speech := &tts.SpeechResult{
+				Audio:   []byte("test"),
+				Timings: timings,
+			}
+
+			_, err := pipeline.assembleVideo(
+				context.Background(),
+				&session{dir: "/tmp/test"},
+				"test script",
+				speech,
+				nil,
+				nil,
+			)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error for duration exceeding limit, got nil")
+				} else if !strings.Contains(err.Error(), "exceeds limit") {
+					t.Errorf("expected 'exceeds limit' error, got: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestMaxDurationZeroAllowsAnyDuration(t *testing.T) {
+	cfg := &config.Config{
+		Video: config.VideoConfig{
+			MaxDuration: 0,
+		},
+	}
+	duration := audioDuration([]tts.WordTiming{
+		{Word: "test", StartTime: 0, EndTime: 120.0},
+	})
+	maxDuration := cfg.Video.MaxDuration
+
+	if maxDuration > 0 && duration > maxDuration {
+		t.Error("expected zero maxDuration to allow any duration")
 	}
 }

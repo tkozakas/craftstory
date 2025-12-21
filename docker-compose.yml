@@ -1,9 +1,0 @@
-services:
-  xtts:
-    image: daswer123/xtts-api-server:latest
-    ports:
-      - "8020:8020"
-    volumes:
-      - ./assets/characters:/app/speakers
-    environment:
-      - COQUI_TOS_AGREED=1

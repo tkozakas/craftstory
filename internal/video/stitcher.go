@@ -13,12 +13,20 @@ import (
 type AudioSegment struct {
 	Audio   []byte
 	Timings []tts.WordTiming
+	Speaker string
 }
 
 type StitchedAudio struct {
 	Data     []byte
 	Timings  []tts.WordTiming
 	Duration float64
+	Segments []SegmentInfo
+}
+
+type SegmentInfo struct {
+	Speaker   string
+	StartTime float64
+	EndTime   float64
 }
 
 type AudioStitcher struct {
@@ -47,6 +55,7 @@ func (s *AudioStitcher) Stitch(ctx context.Context, segments []AudioSegment) (*S
 			Data:     segments[0].Audio,
 			Timings:  segments[0].Timings,
 			Duration: duration,
+			Segments: []SegmentInfo{{Speaker: segments[0].Speaker, StartTime: 0, EndTime: duration}},
 		}, nil
 	}
 
@@ -103,20 +112,23 @@ func (s *AudioStitcher) Stitch(ctx context.Context, segments []AudioSegment) (*S
 		return nil, fmt.Errorf("failed to read stitched audio: %w", err)
 	}
 
-	allTimings, totalDuration := s.adjustTimings(segments)
+	allTimings, totalDuration, segmentInfos := s.adjustTimings(segments)
 
 	return &StitchedAudio{
 		Data:     stitchedData,
 		Timings:  allTimings,
 		Duration: totalDuration,
+		Segments: segmentInfos,
 	}, nil
 }
 
-func (s *AudioStitcher) adjustTimings(segments []AudioSegment) ([]tts.WordTiming, float64) {
+func (s *AudioStitcher) adjustTimings(segments []AudioSegment) ([]tts.WordTiming, float64, []SegmentInfo) {
 	var allTimings []tts.WordTiming
+	var segmentInfos []SegmentInfo
 	var offset float64
 
 	for _, seg := range segments {
+		segStart := offset
 		for _, t := range seg.Timings {
 			allTimings = append(allTimings, tts.WordTiming{
 				Word:      t.Word,
@@ -127,9 +139,14 @@ func (s *AudioStitcher) adjustTimings(segments []AudioSegment) ([]tts.WordTiming
 		if len(seg.Timings) > 0 {
 			offset = seg.Timings[len(seg.Timings)-1].EndTime + offset
 		}
+		segmentInfos = append(segmentInfos, SegmentInfo{
+			Speaker:   seg.Speaker,
+			StartTime: segStart,
+			EndTime:   offset,
+		})
 	}
 
-	return allTimings, offset
+	return allTimings, offset, segmentInfos
 }
 
 func detectAudioFormat(data []byte) string {
@@ -137,12 +154,10 @@ func detectAudioFormat(data []byte) string {
 		return ".bin"
 	}
 
-	// WAV: starts with "RIFF"
 	if data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F' {
 		return ".wav"
 	}
 
-	// MP3: starts with ID3 or 0xFF 0xFB
 	if (data[0] == 'I' && data[1] == 'D' && data[2] == '3') ||
 		(data[0] == 0xFF && (data[1]&0xE0) == 0xE0) {
 		return ".mp3"

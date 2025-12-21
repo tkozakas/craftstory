@@ -31,17 +31,19 @@ func TestBuildFilterComplex(t *testing.T) {
 		name            string
 		assPath         string
 		overlays        []ImageOverlay
+		charOverlays    []CharacterOverlay
 		musicPath       string
 		duration        float64
 		wantContains    []string
 		wantNotContains []string
 	}{
 		{
-			name:      "noOverlaysNoMusic",
-			assPath:   "/tmp/subs.ass",
-			overlays:  nil,
-			musicPath: "",
-			duration:  30.0,
+			name:         "noOverlaysNoMusic",
+			assPath:      "/tmp/subs.ass",
+			overlays:     nil,
+			charOverlays: nil,
+			musicPath:    "",
+			duration:     30.0,
 			wantContains: []string{
 				"scale=1080:1920",
 				"crop=1080:1920",
@@ -55,10 +57,11 @@ func TestBuildFilterComplex(t *testing.T) {
 			},
 		},
 		{
-			name:      "singleOverlayNoMusic",
-			assPath:   "/tmp/subs.ass",
-			musicPath: "",
-			duration:  30.0,
+			name:         "singleOverlayNoMusic",
+			assPath:      "/tmp/subs.ass",
+			musicPath:    "",
+			charOverlays: nil,
+			duration:     30.0,
 			overlays: []ImageOverlay{
 				{ImagePath: "/tmp/img1.png", StartTime: 1.0, EndTime: 3.0, Width: 400, Height: 300},
 			},
@@ -73,10 +76,11 @@ func TestBuildFilterComplex(t *testing.T) {
 			},
 		},
 		{
-			name:      "multipleOverlaysNoMusic",
-			assPath:   "/tmp/subs.ass",
-			musicPath: "",
-			duration:  30.0,
+			name:         "multipleOverlaysNoMusic",
+			assPath:      "/tmp/subs.ass",
+			musicPath:    "",
+			charOverlays: nil,
+			duration:     30.0,
 			overlays: []ImageOverlay{
 				{ImagePath: "/tmp/img1.png", StartTime: 1.0, EndTime: 2.0, Width: 400, Height: 300},
 				{ImagePath: "/tmp/img2.png", StartTime: 3.0, EndTime: 4.0, Width: 500, Height: 400},
@@ -89,22 +93,39 @@ func TestBuildFilterComplex(t *testing.T) {
 			},
 		},
 		{
-			name:      "withMusic",
-			assPath:   "/tmp/subs.ass",
-			overlays:  nil,
-			musicPath: "/music/track.mp3",
-			duration:  30.0,
+			name:         "withMusic",
+			assPath:      "/tmp/subs.ass",
+			overlays:     nil,
+			charOverlays: nil,
+			musicPath:    "/music/track.mp3",
+			duration:     30.0,
 			wantContains: []string{
 				"amix=inputs=3",
 				"afade=t=in",
 				"afade=t=out",
 			},
 		},
+		{
+			name:     "withCharacterOverlays",
+			assPath:  "/tmp/subs.ass",
+			overlays: nil,
+			charOverlays: []CharacterOverlay{
+				{Speaker: "spongebob", AvatarPath: "/img/spongebob.png", StartTime: 0, EndTime: 5, Position: 0},
+				{Speaker: "patrick", AvatarPath: "/img/patrick.png", StartTime: 5, EndTime: 10, Position: 1},
+			},
+			musicPath: "",
+			duration:  30.0,
+			wantContains: []string{
+				"scale=216:-1",
+				"overlay",
+				"H-200-h",
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := assembler.buildFilterComplex(tt.assPath, tt.overlays, tt.musicPath, tt.duration)
+			result := assembler.buildFilterComplex(tt.assPath, tt.overlays, tt.charOverlays, tt.musicPath, tt.duration)
 
 			for _, want := range tt.wantContains {
 				if !strings.Contains(result, want) {
@@ -132,21 +153,23 @@ func TestBuildFFmpegArgs(t *testing.T) {
 		musicPath    string
 		startTime    float64
 		duration     float64
+		charOverlays []CharacterOverlay
 		overlays     []ImageOverlay
 		wantContains []string
 	}{
 		{
-			name:      "basicArgs",
-			bgClip:    "/bg/video.mp4",
-			audioPath: "/audio/voice.mp3",
-			musicPath: "",
-			startTime: 5.0,
-			duration:  30.0,
-			overlays:  nil,
+			name:         "basicArgs",
+			bgClip:       "/bg/video.mp4",
+			audioPath:    "/audio/voice.mp3",
+			musicPath:    "",
+			startTime:    5.0,
+			duration:     30.0,
+			charOverlays: nil,
+			overlays:     nil,
 			wantContains: []string{
 				"-y",
 				"-ss", "5.00",
-				"-t", "31.50", // 30.0 + 1.5 buffer
+				"-t", "31.50",
 				"-i", "/bg/video.mp4",
 				"-i", "/audio/voice.mp3",
 				"-map", "[v]",
@@ -156,12 +179,13 @@ func TestBuildFFmpegArgs(t *testing.T) {
 			},
 		},
 		{
-			name:      "withOverlays",
-			bgClip:    "/bg/video.mp4",
-			audioPath: "/audio/voice.mp3",
-			musicPath: "",
-			startTime: 0,
-			duration:  10.0,
+			name:         "withOverlays",
+			bgClip:       "/bg/video.mp4",
+			audioPath:    "/audio/voice.mp3",
+			musicPath:    "",
+			startTime:    0,
+			duration:     10.0,
+			charOverlays: nil,
 			overlays: []ImageOverlay{
 				{ImagePath: "/img/overlay1.png"},
 				{ImagePath: "/img/overlay2.png"},
@@ -183,14 +207,29 @@ func TestBuildFFmpegArgs(t *testing.T) {
 				"-i", "/music/track.mp3",
 			},
 		},
+		{
+			name:      "withCharacterOverlays",
+			bgClip:    "/bg/video.mp4",
+			audioPath: "/audio/voice.mp3",
+			musicPath: "",
+			startTime: 0,
+			duration:  30.0,
+			charOverlays: []CharacterOverlay{
+				{AvatarPath: "/img/spongebob.png"},
+			},
+			overlays: nil,
+			wantContains: []string{
+				"-i", "/img/spongebob.png",
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			filterComplex := assembler.buildFilterComplex("/tmp/subs.ass", tt.overlays, tt.musicPath, tt.duration)
+			filterComplex := assembler.buildFilterComplex("/tmp/subs.ass", tt.overlays, tt.charOverlays, tt.musicPath, tt.duration)
 			args := assembler.buildFFmpegArgs(
 				tt.bgClip, tt.audioPath, tt.musicPath, tt.startTime, tt.duration,
-				filterComplex, tt.overlays, "/output/out.mp4",
+				filterComplex, tt.charOverlays, tt.overlays, "/output/out.mp4",
 			)
 
 			argsStr := strings.Join(args, " ")
@@ -250,60 +289,6 @@ func TestRandomStartTime(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestImageOverlayStruct(t *testing.T) {
-	overlay := ImageOverlay{
-		ImagePath: "/path/to/image.png",
-		StartTime: 1.5,
-		EndTime:   4.5,
-		Width:     400,
-		Height:    300,
-	}
-
-	if overlay.ImagePath != "/path/to/image.png" {
-		t.Errorf("ImagePath = %q, want %q", overlay.ImagePath, "/path/to/image.png")
-	}
-	if overlay.StartTime != 1.5 {
-		t.Errorf("StartTime = %v, want %v", overlay.StartTime, 1.5)
-	}
-	if overlay.EndTime != 4.5 {
-		t.Errorf("EndTime = %v, want %v", overlay.EndTime, 4.5)
-	}
-	if overlay.Width != 400 {
-		t.Errorf("Width = %v, want %v", overlay.Width, 400)
-	}
-	if overlay.Height != 300 {
-		t.Errorf("Height = %v, want %v", overlay.Height, 300)
-	}
-}
-
-func TestAssembleRequestStruct(t *testing.T) {
-	req := AssembleRequest{
-		AudioPath:     "/audio/test.mp3",
-		AudioDuration: 30.5,
-		Script:        "Hello world",
-		OutputPath:    "/output/video.mp4",
-		ImageOverlays: []ImageOverlay{
-			{ImagePath: "/img/test.png"},
-		},
-	}
-
-	if req.AudioPath != "/audio/test.mp3" {
-		t.Errorf("AudioPath = %q, want %q", req.AudioPath, "/audio/test.mp3")
-	}
-	if req.AudioDuration != 30.5 {
-		t.Errorf("AudioDuration = %v, want %v", req.AudioDuration, 30.5)
-	}
-	if req.Script != "Hello world" {
-		t.Errorf("Script = %q, want %q", req.Script, "Hello world")
-	}
-	if req.OutputPath != "/output/video.mp4" {
-		t.Errorf("OutputPath = %q, want %q", req.OutputPath, "/output/video.mp4")
-	}
-	if len(req.ImageOverlays) != 1 {
-		t.Errorf("ImageOverlays len = %d, want 1", len(req.ImageOverlays))
 	}
 }
 
@@ -406,33 +391,6 @@ func TestNewAssemblerWithMusicOptions(t *testing.T) {
 	}
 }
 
-func TestNewAssemblerWithIntroOutroOptions(t *testing.T) {
-	subGen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
-	assembler := NewAssemblerWithOptions(AssemblerOptions{
-		OutputDir:     "/output",
-		Resolution:    "1080x1920",
-		SubtitleGen:   subGen,
-		BgProvider:    nil,
-		IntroPath:     "/assets/intro.mp4",
-		OutroPath:     "/assets/outro.mp4",
-		IntroDuration: 3.0,
-		OutroDuration: 5.0,
-	})
-
-	if assembler.introPath != "/assets/intro.mp4" {
-		t.Errorf("introPath = %q, want %q", assembler.introPath, "/assets/intro.mp4")
-	}
-	if assembler.outroPath != "/assets/outro.mp4" {
-		t.Errorf("outroPath = %q, want %q", assembler.outroPath, "/assets/outro.mp4")
-	}
-	if assembler.introDuration != 3.0 {
-		t.Errorf("introDuration = %v, want %v", assembler.introDuration, 3.0)
-	}
-	if assembler.outroDuration != 5.0 {
-		t.Errorf("outroDuration = %v, want %v", assembler.outroDuration, 5.0)
-	}
-}
-
 func TestBuildAudioFilter(t *testing.T) {
 	subGen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
 	assembler := NewAssemblerWithOptions(AssemblerOptions{
@@ -485,47 +443,32 @@ func TestBuildAudioFilter(t *testing.T) {
 	}
 }
 
-func TestImageInputIndex(t *testing.T) {
+func TestGetInputOffset(t *testing.T) {
 	subGen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
 	assembler := NewAssembler("/output", subGen, nil)
 
 	tests := []struct {
 		name      string
-		imageIdx  int
 		musicPath string
 		want      int
 	}{
 		{
-			name:      "firstImageNoMusic",
-			imageIdx:  0,
+			name:      "noMusic",
 			musicPath: "",
 			want:      2,
 		},
 		{
-			name:      "secondImageNoMusic",
-			imageIdx:  1,
-			musicPath: "",
-			want:      3,
-		},
-		{
-			name:      "firstImageWithMusic",
-			imageIdx:  0,
+			name:      "withMusic",
 			musicPath: "/music/track.mp3",
 			want:      3,
-		},
-		{
-			name:      "secondImageWithMusic",
-			imageIdx:  1,
-			musicPath: "/music/track.mp3",
-			want:      4,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := assembler.imageInputIndex(tt.imageIdx, tt.musicPath)
+			got := assembler.getInputOffset(tt.musicPath)
 			if got != tt.want {
-				t.Errorf("imageInputIndex() = %d, want %d", got, tt.want)
+				t.Errorf("getInputOffset() = %d, want %d", got, tt.want)
 			}
 		})
 	}

@@ -35,6 +35,7 @@ type Client struct {
 	model      string
 	stability  float64
 	similarity float64
+	speed      float64
 	baseURL    string
 }
 
@@ -43,6 +44,7 @@ type Options struct {
 	Model      string
 	Stability  float64
 	Similarity float64
+	Speed      float64
 }
 
 type request struct {
@@ -54,6 +56,7 @@ type request struct {
 type voiceSettings struct {
 	Stability       float64 `json:"stability"`
 	SimilarityBoost float64 `json:"similarity_boost"`
+	Speed           float64 `json:"speed,omitempty"`
 }
 
 type timestampResponse struct {
@@ -77,9 +80,14 @@ type VoiceConfig struct {
 	ID         string
 	Stability  float64
 	Similarity float64
+	Speed      float64
 }
 
 func NewClient(apiKey string, opts Options) *Client {
+	speed := opts.Speed
+	if speed == 0 {
+		speed = 1.0
+	}
 	return &Client{
 		apiKey: apiKey,
 		httpClient: &http.Client{
@@ -89,6 +97,7 @@ func NewClient(apiKey string, opts Options) *Client {
 		model:      opts.Model,
 		stability:  opts.Stability,
 		similarity: opts.Similarity,
+		speed:      speed,
 		baseURL:    baseURL,
 	}
 }
@@ -108,6 +117,7 @@ func (c *Client) GenerateSpeechWithTimings(ctx context.Context, text string) (*S
 		VoiceSettings: voiceSettings{
 			Stability:       c.stability,
 			SimilarityBoost: c.similarity,
+			Speed:           c.speed,
 		},
 	}
 
@@ -214,11 +224,15 @@ func extractWordTimings(a alignment) []WordTiming {
 func (c *Client) GenerateSpeechWithVoice(ctx context.Context, text string, voice VoiceConfig) (*SpeechResult, error) {
 	stability := voice.Stability
 	similarity := voice.Similarity
+	speed := voice.Speed
 	if stability == 0 {
 		stability = c.stability
 	}
 	if similarity == 0 {
 		similarity = c.similarity
+	}
+	if speed == 0 {
+		speed = c.speed
 	}
 
 	reqBody := request{
@@ -227,6 +241,7 @@ func (c *Client) GenerateSpeechWithVoice(ctx context.Context, text string, voice
 		VoiceSettings: voiceSettings{
 			Stability:       stability,
 			SimilarityBoost: similarity,
+			Speed:           speed,
 		},
 	}
 

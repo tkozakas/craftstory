@@ -21,6 +21,7 @@ type SubtitleGenerator struct {
 	outlineSize  int
 	shadowSize   int
 	bold         bool
+	offset       float64
 }
 
 type SubtitleOptions struct {
@@ -31,6 +32,7 @@ type SubtitleOptions struct {
 	OutlineSize  int
 	ShadowSize   int
 	Bold         bool
+	Offset       float64
 }
 
 func NewSubtitleGenerator(opts SubtitleOptions) *SubtitleGenerator {
@@ -62,6 +64,7 @@ func NewSubtitleGenerator(opts SubtitleOptions) *SubtitleGenerator {
 		outlineSize:  outlineSize,
 		shadowSize:   shadowSize,
 		bold:         opts.Bold,
+		offset:       opts.Offset,
 	}
 }
 
@@ -82,10 +85,18 @@ func toASSColor(color string) string {
 func (g *SubtitleGenerator) GenerateFromTimings(timings []tts.WordTiming) []Subtitle {
 	subtitles := make([]Subtitle, 0, len(timings))
 	for _, t := range timings {
+		startTime := t.StartTime + g.offset
+		endTime := t.EndTime + g.offset
+		if startTime < 0 {
+			startTime = 0
+		}
+		if endTime < 0 {
+			endTime = 0
+		}
 		subtitles = append(subtitles, Subtitle{
 			Word:      t.Word,
-			StartTime: t.StartTime,
-			EndTime:   t.EndTime,
+			StartTime: startTime,
+			EndTime:   endTime,
 		})
 	}
 	return subtitles

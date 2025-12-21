@@ -16,7 +16,7 @@ type SpeechResult struct {
 type VoiceConfig struct {
 	ID         string
 	Name       string
-	Sample     string
+	Avatar     string
 	Stability  float64
 	Similarity float64
 }

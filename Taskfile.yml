@@ -13,10 +13,6 @@ tasks:
     cmds:
       - go test -race -cover ./...
 
-  test-integration:
-    cmds:
-      - go test -race -tags=integration ./...
-
   lint:
     cmds:
       - golangci-lint run
@@ -25,23 +21,3 @@ tasks:
     cmds:
       - golangci-lint run
       - go test -race ./...
-
-  xtts:
-    desc: Start XTTS server
-    cmds:
-      - docker compose up -d
-
-  xtts:down:
-    desc: Stop XTTS server
-    cmds:
-      - docker compose down
-
-  xtts:logs:
-    desc: Show XTTS server logs
-    cmds:
-      - docker compose logs -f
-
-  add-voice:
-    desc: Add voice sample from YouTube for a character
-    cmds:
-      - ./scripts/add-voice.sh {{.CLI_ARGS}}

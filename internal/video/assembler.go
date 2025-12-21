@@ -18,7 +18,7 @@ import (
 const (
 	defaultFFmpegPath = "ffmpeg"
 	defaultFFprobe    = "ffprobe"
-	videoEndBuffer    = 1.5 // extra seconds of background video after audio ends
+	videoEndBuffer    = 1.5
 )
 
 type Assembler struct {
@@ -62,13 +62,22 @@ type ImageOverlay struct {
 	Height    int
 }
 
+type CharacterOverlay struct {
+	Speaker    string
+	AvatarPath string
+	StartTime  float64
+	EndTime    float64
+	Position   int
+}
+
 type AssembleRequest struct {
-	AudioPath     string
-	AudioDuration float64
-	Script        string
-	OutputPath    string
-	WordTimings   []tts.WordTiming
-	ImageOverlays []ImageOverlay
+	AudioPath         string
+	AudioDuration     float64
+	Script            string
+	OutputPath        string
+	WordTimings       []tts.WordTiming
+	ImageOverlays     []ImageOverlay
+	CharacterOverlays []CharacterOverlay
 }
 
 type AssembleResult struct {
@@ -168,7 +177,7 @@ func (a *Assembler) Assemble(ctx context.Context, req AssembleRequest) (*Assembl
 	defer func() { _ = os.Remove(assPath) }()
 
 	musicPath := a.selectMusicTrack()
-	filterComplex := a.buildFilterComplex(assPath, req.ImageOverlays, musicPath, req.AudioDuration)
+	filterComplex := a.buildFilterComplex(assPath, req.ImageOverlays, req.CharacterOverlays, musicPath, req.AudioDuration)
 
 	mainVideoPath := outputPath
 	needsConcat := a.introPath != "" || a.outroPath != ""
@@ -177,7 +186,7 @@ func (a *Assembler) Assemble(ctx context.Context, req AssembleRequest) (*Assembl
 		defer func() { _ = os.Remove(mainVideoPath) }()
 	}
 
-	args := a.buildFFmpegArgs(backgroundClip, req.AudioPath, musicPath, startTime, req.AudioDuration, filterComplex, req.ImageOverlays, mainVideoPath)
+	args := a.buildFFmpegArgs(backgroundClip, req.AudioPath, musicPath, startTime, req.AudioDuration, filterComplex, req.CharacterOverlays, req.ImageOverlays, mainVideoPath)
 
 	cmd := exec.CommandContext(ctx, a.ffmpegPath, args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -200,24 +209,55 @@ func (a *Assembler) Assemble(ctx context.Context, req AssembleRequest) (*Assembl
 	}, nil
 }
 
-func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, musicPath string, duration float64) string {
+func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, charOverlays []CharacterOverlay, musicPath string, duration float64) string {
 	scaleFilter := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d",
 		a.width, a.height, a.width, a.height)
 
 	audioFilter := a.buildAudioFilter(musicPath, duration)
 
-	if len(overlays) == 0 {
+	totalOverlays := len(overlays) + len(charOverlays)
+	if totalOverlays == 0 {
 		return fmt.Sprintf("[0:v]%s,ass=%s[v];%s",
 			scaleFilter, assPath, audioFilter)
 	}
 
 	var filters []string
-
 	filters = append(filters, fmt.Sprintf("[0:v]%s,ass=%s[base]", scaleFilter, assPath))
 
 	lastOutput := "base"
+	inputOffset := a.getInputOffset(musicPath)
+
+	avatarSize := a.width / 5
+	bottomMargin := 200
+
+	for i, charOverlay := range charOverlays {
+		inputIdx := inputOffset + i
+		scaledName := fmt.Sprintf("char%d", i)
+		outputName := fmt.Sprintf("c%d", i)
+
+		filters = append(filters, fmt.Sprintf(
+			"[%d:v]scale=%d:-1,format=rgba[%s]",
+			inputIdx, avatarSize, scaledName,
+		))
+
+		var x string
+		if charOverlay.Position == 0 {
+			x = "50"
+		} else {
+			x = "W-w-50"
+		}
+		y := fmt.Sprintf("H-%d-h", bottomMargin)
+
+		filters = append(filters, fmt.Sprintf(
+			"[%s][%s]overlay=%s:%s:enable='between(t,%.2f,%.2f)'[%s]",
+			lastOutput, scaledName, x, y, charOverlay.StartTime, charOverlay.EndTime, outputName,
+		))
+
+		lastOutput = outputName
+	}
+
 	for i, overlay := range overlays {
-		inputIdx := a.imageInputIndex(i, musicPath)
+		inputIdx := inputOffset + len(charOverlays) + i
 		scaledName := fmt.Sprintf("img%d", i)
 		outputName := fmt.Sprintf("v%d", i)
 
@@ -243,7 +283,14 @@ func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, 
 	return strings.Join(filters, ";")
 }
 
-func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTime, duration float64, filterComplex string, overlays []ImageOverlay, outputPath string) []string {
+func (a *Assembler) getInputOffset(musicPath string) int {
+	if musicPath != "" {
+		return 3
+	}
+	return 2
+}
+
+func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTime, duration float64, filterComplex string, charOverlays []CharacterOverlay, overlays []ImageOverlay, outputPath string) []string {
 	videoDuration := duration + videoEndBuffer
 
 	args := []string{
@@ -256,6 +303,10 @@ func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTi
 
 	if musicPath != "" {
 		args = append(args, "-i", musicPath)
+	}
+
+	for _, charOverlay := range charOverlays {
+		args = append(args, "-i", charOverlay.AvatarPath)
 	}
 
 	for _, overlay := range overlays {
@@ -290,12 +341,12 @@ func (a *Assembler) getVideoDuration(ctx context.Context, path string) (float64,
 		return 0, fmt.Errorf("ffprobe failed: %w", err)
 	}
 
-	var duration float64
-	if _, err := fmt.Sscanf(string(output), "%f", &duration); err != nil {
+	var dur float64
+	if _, err := fmt.Sscanf(string(output), "%f", &dur); err != nil {
 		return 0, fmt.Errorf("failed to parse duration: %w", err)
 	}
 
-	return duration, nil
+	return dur, nil
 }
 
 func (a *Assembler) randomStartTime(clipDuration, neededDuration float64) float64 {
@@ -352,14 +403,6 @@ func (a *Assembler) buildAudioFilter(musicPath string, duration float64) string 
 			"[bga][voice][music]amix=inputs=3:duration=longest:normalize=0[a]",
 		a.musicVolume, a.musicFadeIn, fadeOutStart, a.musicFadeOut,
 	)
-}
-
-func (a *Assembler) imageInputIndex(imageIdx int, musicPath string) int {
-	base := 2
-	if musicPath != "" {
-		base = 3
-	}
-	return base + imageIdx
 }
 
 func (a *Assembler) concatIntroOutro(ctx context.Context, mainVideoPath, outputPath string) (float64, float64, error) {
@@ -433,13 +476,13 @@ func (a *Assembler) concatIntroOutro(ctx context.Context, mainVideoPath, outputP
 }
 
 func (a *Assembler) prepareClip(ctx context.Context, clipPath string, maxDuration float64, outputDir, prefix string) (string, float64, error) {
-	duration, err := a.getVideoDuration(ctx, clipPath)
+	dur, err := a.getVideoDuration(ctx, clipPath)
 	if err != nil {
 		return "", 0, err
 	}
 
-	targetDuration := duration
-	if maxDuration > 0 && duration > maxDuration {
+	targetDuration := dur
+	if maxDuration > 0 && dur > maxDuration {
 		targetDuration = maxDuration
 	}
 

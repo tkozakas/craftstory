@@ -1,8 +1,8 @@
 package app
 
 import (
-	"craftstory/internal/deepseek"
 	"craftstory/internal/imagesearch"
+	"craftstory/internal/llm"
 	"craftstory/internal/reddit"
 	"craftstory/internal/storage"
 	"craftstory/internal/tts"
@@ -13,7 +13,7 @@ import (
 
 type Service struct {
 	cfg         *config.Config
-	deepseek    *deepseek.Client
+	llm         llm.Client
 	tts         tts.Provider
 	uploader    uploader.Uploader
 	assembler   *video.Assembler
@@ -24,7 +24,7 @@ type Service struct {
 
 func NewService(
 	cfg *config.Config,
-	deepseek *deepseek.Client,
+	llmClient llm.Client,
 	ttsProvider tts.Provider,
 	up uploader.Uploader,
 	assembler *video.Assembler,
@@ -34,7 +34,7 @@ func NewService(
 ) *Service {
 	return &Service{
 		cfg:         cfg,
-		deepseek:    deepseek,
+		llm:         llmClient,
 		tts:         ttsProvider,
 		uploader:    up,
 		assembler:   assembler,
@@ -48,8 +48,8 @@ func (s *Service) Config() *config.Config {
 	return s.cfg
 }
 
-func (s *Service) DeepSeek() *deepseek.Client {
-	return s.deepseek
+func (s *Service) LLM() llm.Client {
+	return s.llm
 }
 
 func (s *Service) TTS() tts.Provider {

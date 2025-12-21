@@ -1,24 +1,28 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
 	"log/slog"
 	"math/rand"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"craftstory/internal/app"
-	"craftstory/internal/deepseek"
 	"craftstory/internal/elevenlabs"
+	"craftstory/internal/gemini"
 	"craftstory/internal/imagesearch"
 	"craftstory/internal/reddit"
 	"craftstory/internal/storage"
 	"craftstory/internal/tts"
 	"craftstory/internal/uploader"
 	"craftstory/internal/video"
-	"craftstory/internal/xtts"
 	"craftstory/pkg/config"
 	"craftstory/pkg/prompts"
 )
@@ -26,34 +30,201 @@ import (
 func main() {
 	rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	generateCmd := flag.NewFlagSet("generate", flag.ExitOnError)
-	uploadCmd := flag.NewFlagSet("upload", flag.ExitOnError)
-	authCmd := flag.NewFlagSet("auth", flag.ExitOnError)
-
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)
 	}
 
-	cfg := config.Load()
-
 	switch os.Args[1] {
+	case "setup":
+		handleSetup()
 	case "generate":
-		handleGenerate(generateCmd, cfg)
+		handleGenerate()
 	case "upload":
-		handleUpload(uploadCmd, cfg)
+		handleUpload()
 	case "auth":
-		handleAuth(authCmd, cfg)
+		handleAuth()
 	default:
 		printUsage()
 		os.Exit(1)
 	}
 }
 
-func handleGenerate(cmd *flag.FlagSet, cfg *config.Config) {
+func handleSetup() {
+	slog.Info("Setting up Craftstory")
+
+	if _, err := exec.LookPath("gcloud"); err != nil {
+		slog.Error("gcloud CLI not found. Run: mise install")
+		os.Exit(1)
+	}
+
+	if err := runCmd("gcloud", "auth", "print-access-token"); err != nil {
+		slog.Info("Authenticating with Google Cloud")
+		runCmdInteractive("gcloud", "auth", "login")
+		runCmdInteractive("gcloud", "auth", "application-default", "login")
+	}
+
+	project := selectProject()
+	updateConfigProject(project)
+	runCmd("gcloud", "config", "set", "project", project)
+
+	slog.Info("Checking billing")
+	for {
+		out, _ := exec.Command("gcloud", "billing", "projects", "describe", project, "--format=value(billingEnabled)").Output()
+		if strings.TrimSpace(string(out)) == "True" {
+			break
+		}
+		url := "https://console.cloud.google.com/billing/linkedaccount?project=" + project
+		slog.Warn("Billing not enabled", "url", url)
+		openBrowser(url)
+		fmt.Print("Press Enter after enabling billing...")
+		bufio.NewReader(os.Stdin).ReadBytes('\n')
+	}
+
+	slog.Info("Enabling APIs")
+	apis := []string{
+		"aiplatform.googleapis.com",
+		"secretmanager.googleapis.com",
+		"youtube.googleapis.com",
+		"customsearch.googleapis.com",
+	}
+	for _, api := range apis {
+		runCmdInteractive("gcloud", "services", "enable", api)
+	}
+
+	if runCmd("gcloud", "secrets", "describe", "elevenlabs-api-key") != nil {
+		url := "https://elevenlabs.io/app/settings/api-keys"
+		slog.Info("Get your API key", "url", url)
+		openBrowser(url)
+		fmt.Print("Paste API key here: ")
+		reader := bufio.NewReader(os.Stdin)
+		value, _ := reader.ReadString('\n')
+		value = strings.TrimSpace(value)
+		if value != "" {
+			cmd := exec.Command("gcloud", "secrets", "create", "elevenlabs-api-key", "--data-file=-")
+			cmd.Stdin = strings.NewReader(value)
+			cmd.Run()
+		}
+	}
+
+	slog.Info("Setup complete! Run: task run -- generate -topic \"your topic\"")
+}
+
+func selectProject() string {
+	cmd := exec.Command("gcloud", "projects", "list", "--format=value(projectId)")
+	output, err := cmd.Output()
+	if err != nil {
+		slog.Error("Failed to list projects", "error", err)
+		os.Exit(1)
+	}
+
+	projects := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(projects) == 0 {
+		slog.Error("No GCP projects found", "url", "https://console.cloud.google.com")
+		os.Exit(1)
+	}
+
+	slog.Info("Select a project")
+	for i, p := range projects {
+		fmt.Printf("  %d. %s\n", i+1, p)
+	}
+	fmt.Print("Enter number: ")
+
+	reader := bufio.NewReader(os.Stdin)
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+
+	var idx int
+	fmt.Sscanf(input, "%d", &idx)
+	if idx < 1 || idx > len(projects) {
+		idx = 1
+	}
+
+	return projects[idx-1]
+}
+
+func updateConfigProject(project string) {
+	data, err := os.ReadFile("config.yaml")
+	if err != nil {
+		return
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "project:") {
+			indent := len(line) - len(strings.TrimLeft(line, " \t"))
+			lines[i] = strings.Repeat(" ", indent) + "project: \"" + project + "\""
+			break
+		}
+	}
+
+	os.WriteFile("config.yaml", []byte(strings.Join(lines, "\n")), 0644)
+	slog.Info("Updated config.yaml", "project", project)
+}
+
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch {
+	case commandExists("xdg-open"):
+		cmd = exec.Command("xdg-open", url)
+	case commandExists("open"):
+		cmd = exec.Command("open", url)
+	default:
+		slog.Info("Open URL", "url", url)
+		return
+	}
+	cmd.Start()
+}
+
+func commandExists(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
+func runCmd(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	return cmd.Run()
+}
+
+func runCmdInteractive(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func loadConfigOnly() *config.Config {
+	data, err := os.ReadFile("config.yaml")
+	if err != nil {
+		slog.Error("Failed to read config.yaml", "error", err)
+		os.Exit(1)
+	}
+	cfg := &config.Config{}
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		slog.Error("Failed to parse config.yaml", "error", err)
+		os.Exit(1)
+	}
+	return cfg
+}
+
+func loadConfig() *config.Config {
+	ctx := context.Background()
+	cfg, err := config.Load(ctx)
+	if err != nil {
+		slog.Error("Failed to load config", "error", err)
+		os.Exit(1)
+	}
+	return cfg
+}
+
+func handleGenerate() {
+	cfg := loadConfig()
+	cmd := flag.NewFlagSet("generate", flag.ExitOnError)
 	topic := cmd.String("topic", "", "Topic for the video script (required)")
 	upload := cmd.Bool("upload", false, "Upload to YouTube after generation")
-	provider := cmd.String("provider", "elevenlabs", "TTS provider: elevenlabs or xtts")
 
 	if err := cmd.Parse(os.Args[2:]); err != nil {
 		slog.Error("Failed to parse flags", "error", err)
@@ -64,8 +235,6 @@ func handleGenerate(cmd *flag.FlagSet, cfg *config.Config) {
 		slog.Error("-topic is required")
 		os.Exit(1)
 	}
-
-	cfg.TTS.Provider = *provider
 
 	svc := initService(cfg)
 	pipeline := app.NewPipeline(svc)
@@ -78,25 +247,24 @@ func handleGenerate(cmd *flag.FlagSet, cfg *config.Config) {
 			slog.Error("Failed to generate and upload video", "error", err)
 			os.Exit(1)
 		}
-		fmt.Printf("\n✅ Video uploaded successfully!\n")
-		fmt.Printf("   URL: %s\n\n", resp.URL)
+		slog.Info("Video uploaded", "url", resp.URL)
 	} else {
 		result, err := pipeline.Generate(ctx, *topic)
 		if err != nil {
 			slog.Error("Failed to generate video", "error", err)
 			os.Exit(1)
 		}
-		fmt.Printf("\n✅ Video generated successfully!\n")
-		fmt.Printf("┌─────────────────────────────────────────────────────────────\n")
-		fmt.Printf("│ Title:    %s\n", result.Title)
-		fmt.Printf("│ Output:   %s\n", result.OutputDir)
-		fmt.Printf("│ Video:    %s\n", result.VideoPath)
-		fmt.Printf("│ Duration: %.2f seconds\n", result.Duration)
-		fmt.Printf("└─────────────────────────────────────────────────────────────\n\n")
+		slog.Info("Video generated",
+			"title", result.Title,
+			"output", result.OutputDir,
+			"video", result.VideoPath,
+			"duration", result.Duration)
 	}
 }
 
-func handleUpload(cmd *flag.FlagSet, cfg *config.Config) {
+func handleUpload() {
+	cfg := loadConfig()
+	cmd := flag.NewFlagSet("upload", flag.ExitOnError)
 	videoPath := cmd.String("video", "", "Path to video file")
 	title := cmd.String("title", "", "Video title")
 	description := cmd.String("description", "", "Video description")
@@ -115,16 +283,22 @@ func handleUpload(cmd *flag.FlagSet, cfg *config.Config) {
 	pipeline := app.NewPipeline(svc)
 
 	ctx := context.Background()
-	resp, err := pipeline.Upload(ctx, *videoPath, *title, *description)
+	resp, err := pipeline.Upload(ctx, app.UploadRequest{
+		VideoPath:   *videoPath,
+		Title:       *title,
+		Description: *description,
+	})
 	if err != nil {
 		slog.Error("Failed to upload video", "error", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Video uploaded successfully: %s\n", resp.URL)
+	slog.Info("Video uploaded", "url", resp.URL)
 }
 
-func handleAuth(cmd *flag.FlagSet, cfg *config.Config) {
+func handleAuth() {
+	cfg := loadConfig()
+	cmd := flag.NewFlagSet("auth", flag.ExitOnError)
 	if err := cmd.Parse(os.Args[2:]); err != nil {
 		slog.Error("Failed to parse flags", "error", err)
 		os.Exit(1)
@@ -133,13 +307,12 @@ func handleAuth(cmd *flag.FlagSet, cfg *config.Config) {
 	auth := uploader.NewYouTubeAuth(cfg.YouTubeClientID, cfg.YouTubeClientSecret, cfg.YouTubeTokenPath)
 
 	if auth.IsAuthenticated() {
-		fmt.Println("Already authenticated with YouTube")
+		slog.Info("Already authenticated with YouTube")
 		return
 	}
 
-	fmt.Println("Visit this URL to authenticate:")
-	fmt.Println(auth.GetAuthURL())
-	fmt.Print("\nEnter the authorization code: ")
+	slog.Info("Visit URL to authenticate", "url", auth.GetAuthURL())
+	fmt.Print("Enter authorization code: ")
 
 	var code string
 	if _, err := fmt.Scanln(&code); err != nil {
@@ -153,7 +326,7 @@ func handleAuth(cmd *flag.FlagSet, cfg *config.Config) {
 		os.Exit(1)
 	}
 
-	fmt.Println("Authentication successful!")
+	slog.Info("Authentication successful")
 }
 
 func initService(cfg *config.Config) *app.Service {
@@ -161,16 +334,22 @@ func initService(cfg *config.Config) *app.Service {
 
 	p, err := prompts.Load()
 	if err != nil {
-		slog.Warn("Failed to load prompts, using defaults", "error", err)
+		slog.Error("Failed to load prompts.yaml", "error", err)
+		os.Exit(1)
 	}
 
-	dsClient := deepseek.NewClient(cfg.DeepSeekAPIKey, deepseek.Options{
-		Model:        cfg.DeepSeek.Model,
-		SystemPrompt: cfg.DeepSeek.SystemPrompt,
-		Prompts:      p,
-	})
+	llmClient, err := gemini.NewClient(ctx, cfg.Gemini.Project, cfg.Gemini.Location, cfg.Gemini.Model, p)
+	if err != nil {
+		slog.Error("Failed to create Gemini client", "error", err)
+		os.Exit(1)
+	}
 
-	ttsProvider := initTTSProvider(cfg)
+	ttsProvider := tts.NewElevenLabsAdapter(elevenlabs.NewClient(cfg.ElevenLabsAPIKey, elevenlabs.Options{
+		VoiceID:    cfg.ElevenLabs.VoiceID,
+		Model:      cfg.ElevenLabs.Model,
+		Stability:  cfg.ElevenLabs.Stability,
+		Similarity: cfg.ElevenLabs.Similarity,
+	}))
 
 	ytAuth := uploader.NewYouTubeAuth(cfg.YouTubeClientID, cfg.YouTubeClientSecret, cfg.YouTubeTokenPath)
 	ytUploader := uploader.NewYouTubeUploader(ytAuth)
@@ -183,6 +362,7 @@ func initService(cfg *config.Config) *app.Service {
 		OutlineSize:  cfg.Subtitles.OutlineSize,
 		ShadowSize:   cfg.Subtitles.ShadowSize,
 		Bold:         cfg.Subtitles.Bold,
+		Offset:       cfg.Subtitles.Offset,
 	})
 
 	var bgProvider storage.BackgroundProvider
@@ -218,59 +398,20 @@ func initService(cfg *config.Config) *app.Service {
 		slog.Info("Image search enabled")
 	}
 
-	return app.NewService(cfg, dsClient, ttsProvider, ytUploader, assembler, localStorage, redditClient, imgSearchClient)
-}
-
-func initTTSProvider(cfg *config.Config) tts.Provider {
-	switch cfg.TTS.Provider {
-	case "xtts":
-		client := xtts.NewClient(xtts.Options{
-			ServerURL: cfg.XTTS.ServerURL,
-			Speaker:   cfg.XTTS.Speaker,
-			Language:  cfg.XTTS.Language,
-		})
-
-		if !client.IsServerRunning() {
-			slog.Info("Waiting for XTTS server to start...", "url", cfg.XTTS.ServerURL)
-			if err := client.WaitForServer(5*time.Minute, 5*time.Second); err != nil {
-				slog.Error("XTTS server not available", "error", err)
-				os.Exit(1)
-			}
-		}
-
-		slog.Info("Using XTTS provider",
-			"url", cfg.XTTS.ServerURL,
-			"speaker", cfg.XTTS.Speaker,
-			"language", cfg.XTTS.Language)
-		return client
-	default:
-		return newElevenLabsProvider(cfg)
-	}
-}
-
-func newElevenLabsProvider(cfg *config.Config) tts.Provider {
-	elClient := elevenlabs.NewClient(cfg.ElevenLabsAPIKey, elevenlabs.Options{
-		VoiceID:    cfg.ElevenLabs.VoiceID,
-		Model:      cfg.ElevenLabs.Model,
-		Stability:  cfg.ElevenLabs.Stability,
-		Similarity: cfg.ElevenLabs.Similarity,
-	})
-	slog.Info("Using ElevenLabs provider", "voice", cfg.ElevenLabs.VoiceID)
-	return tts.NewElevenLabsAdapter(elClient)
+	return app.NewService(cfg, llmClient, ttsProvider, ytUploader, assembler, localStorage, redditClient, imgSearchClient)
 }
 
 func printUsage() {
-	fmt.Println("Usage: craftstory <command> [options]")
-	fmt.Println()
-	fmt.Println("Commands:")
-	fmt.Println("  generate  Generate a video from a topic")
-	fmt.Println("  upload    Upload a video to YouTube")
-	fmt.Println("  auth      Authenticate with YouTube")
-	fmt.Println()
-	fmt.Println("Examples:")
-	fmt.Println("  craftstory generate -topic \"weird history fact\"")
-	fmt.Println("  craftstory generate -topic \"space theory\" -upload")
-	fmt.Println("  craftstory generate -topic \"fun fact\" -provider xtts")
-	fmt.Println("  craftstory upload -video ./output/video.mp4 -title \"My Video\"")
-	fmt.Println("  craftstory auth")
+	fmt.Println(`Usage: craftstory <command>
+
+Commands:
+  setup     Setup GCP project and authenticate
+  generate  Generate a video from a topic
+  upload    Upload a video to YouTube
+  auth      Authenticate with YouTube
+
+Examples:
+  craftstory setup
+  craftstory generate -topic "weird history fact"
+  craftstory generate -topic "space theory" -upload`)
 }

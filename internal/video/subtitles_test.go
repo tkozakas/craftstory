@@ -239,3 +239,81 @@ func TestToASSCenterAligned(t *testing.T) {
 		t.Error("ASS output should have center alignment (5)")
 	}
 }
+
+func TestGenerateFromTimingsWithOffset(t *testing.T) {
+	tests := []struct {
+		name           string
+		offset         float64
+		timings        []tts.WordTiming
+		wantStartTimes []float64
+		wantEndTimes   []float64
+	}{
+		{
+			name:   "positiveOffset",
+			offset: 0.5,
+			timings: []tts.WordTiming{
+				{Word: "Hello", StartTime: 0.0, EndTime: 0.5},
+				{Word: "world", StartTime: 0.6, EndTime: 1.1},
+			},
+			wantStartTimes: []float64{0.5, 1.1},
+			wantEndTimes:   []float64{1.0, 1.6},
+		},
+		{
+			name:   "negativeOffset",
+			offset: -0.2,
+			timings: []tts.WordTiming{
+				{Word: "Hello", StartTime: 0.5, EndTime: 1.0},
+				{Word: "world", StartTime: 1.0, EndTime: 1.5},
+			},
+			wantStartTimes: []float64{0.3, 0.8},
+			wantEndTimes:   []float64{0.8, 1.3},
+		},
+		{
+			name:   "negativeOffsetClampsToZero",
+			offset: -1.0,
+			timings: []tts.WordTiming{
+				{Word: "Hello", StartTime: 0.0, EndTime: 0.5},
+				{Word: "world", StartTime: 0.6, EndTime: 1.1},
+			},
+			wantStartTimes: []float64{0.0, 0.0},
+			wantEndTimes:   []float64{0.0, 0.1},
+		},
+		{
+			name:   "zeroOffset",
+			offset: 0.0,
+			timings: []tts.WordTiming{
+				{Word: "Hello", StartTime: 0.0, EndTime: 0.5},
+				{Word: "world", StartTime: 0.6, EndTime: 1.1},
+			},
+			wantStartTimes: []float64{0.0, 0.6},
+			wantEndTimes:   []float64{0.5, 1.1},
+		},
+	}
+
+	const epsilon = 0.0001
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gen := NewSubtitleGenerator(SubtitleOptions{
+				FontName: "Arial",
+				FontSize: 48,
+				Offset:   tt.offset,
+			})
+
+			subs := gen.GenerateFromTimings(tt.timings)
+
+			if len(subs) != len(tt.timings) {
+				t.Fatalf("expected %d subtitles, got %d", len(tt.timings), len(subs))
+			}
+
+			for i, sub := range subs {
+				if diff := sub.StartTime - tt.wantStartTimes[i]; diff > epsilon || diff < -epsilon {
+					t.Errorf("subtitle %d: start = %v, want %v", i, sub.StartTime, tt.wantStartTimes[i])
+				}
+				if diff := sub.EndTime - tt.wantEndTimes[i]; diff > epsilon || diff < -epsilon {
+					t.Errorf("subtitle %d: end = %v, want %v", i, sub.EndTime, tt.wantEndTimes[i])
+				}
+			}
+		})
+	}
+}

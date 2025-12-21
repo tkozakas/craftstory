@@ -29,6 +29,7 @@ func TestAdjustTimings(t *testing.T) {
 		segments     []AudioSegment
 		wantTimings  int
 		wantDuration float64
+		wantSegments int
 		wantFirst    tts.WordTiming
 		wantLast     tts.WordTiming
 	}{
@@ -36,6 +37,7 @@ func TestAdjustTimings(t *testing.T) {
 			name: "singleSegment",
 			segments: []AudioSegment{
 				{
+					Speaker: "Alice",
 					Timings: []tts.WordTiming{
 						{Word: "Hello", StartTime: 0, EndTime: 0.5},
 						{Word: "World", StartTime: 0.5, EndTime: 1.0},
@@ -44,6 +46,7 @@ func TestAdjustTimings(t *testing.T) {
 			},
 			wantTimings:  2,
 			wantDuration: 1.0,
+			wantSegments: 1,
 			wantFirst:    tts.WordTiming{Word: "Hello", StartTime: 0, EndTime: 0.5},
 			wantLast:     tts.WordTiming{Word: "World", StartTime: 0.5, EndTime: 1.0},
 		},
@@ -51,12 +54,14 @@ func TestAdjustTimings(t *testing.T) {
 			name: "twoSegments",
 			segments: []AudioSegment{
 				{
+					Speaker: "Alice",
 					Timings: []tts.WordTiming{
 						{Word: "First", StartTime: 0, EndTime: 0.5},
 						{Word: "Part", StartTime: 0.5, EndTime: 1.0},
 					},
 				},
 				{
+					Speaker: "Bob",
 					Timings: []tts.WordTiming{
 						{Word: "Second", StartTime: 0, EndTime: 0.5},
 						{Word: "Part", StartTime: 0.5, EndTime: 1.0},
@@ -65,18 +70,20 @@ func TestAdjustTimings(t *testing.T) {
 			},
 			wantTimings:  4,
 			wantDuration: 2.0,
+			wantSegments: 2,
 			wantFirst:    tts.WordTiming{Word: "First", StartTime: 0, EndTime: 0.5},
 			wantLast:     tts.WordTiming{Word: "Part", StartTime: 1.5, EndTime: 2.0},
 		},
 		{
 			name: "threeSegments",
 			segments: []AudioSegment{
-				{Timings: []tts.WordTiming{{Word: "A", StartTime: 0, EndTime: 1.0}}},
-				{Timings: []tts.WordTiming{{Word: "B", StartTime: 0, EndTime: 1.0}}},
-				{Timings: []tts.WordTiming{{Word: "C", StartTime: 0, EndTime: 1.0}}},
+				{Speaker: "A", Timings: []tts.WordTiming{{Word: "A", StartTime: 0, EndTime: 1.0}}},
+				{Speaker: "B", Timings: []tts.WordTiming{{Word: "B", StartTime: 0, EndTime: 1.0}}},
+				{Speaker: "C", Timings: []tts.WordTiming{{Word: "C", StartTime: 0, EndTime: 1.0}}},
 			},
 			wantTimings:  3,
 			wantDuration: 3.0,
+			wantSegments: 3,
 			wantFirst:    tts.WordTiming{Word: "A", StartTime: 0, EndTime: 1.0},
 			wantLast:     tts.WordTiming{Word: "C", StartTime: 2.0, EndTime: 3.0},
 		},
@@ -85,12 +92,13 @@ func TestAdjustTimings(t *testing.T) {
 			segments:     []AudioSegment{{Timings: []tts.WordTiming{}}},
 			wantTimings:  0,
 			wantDuration: 0,
+			wantSegments: 1,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			timings, duration := stitcher.adjustTimings(tt.segments)
+			timings, duration, segInfos := stitcher.adjustTimings(tt.segments)
 
 			if len(timings) != tt.wantTimings {
 				t.Errorf("adjustTimings() got %d timings, want %d", len(timings), tt.wantTimings)
@@ -98,6 +106,10 @@ func TestAdjustTimings(t *testing.T) {
 
 			if duration != tt.wantDuration {
 				t.Errorf("adjustTimings() duration = %v, want %v", duration, tt.wantDuration)
+			}
+
+			if len(segInfos) != tt.wantSegments {
+				t.Errorf("adjustTimings() got %d segment infos, want %d", len(segInfos), tt.wantSegments)
 			}
 
 			if tt.wantTimings > 0 {
