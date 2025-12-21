@@ -173,8 +173,8 @@ func TestGenerateSpeechWithVoice(t *testing.T) {
 			return
 		}
 
-		if req["speaker_wav"] != "patrick" {
-			t.Errorf("speaker = %q, want patrick", req["speaker_wav"])
+		if req["speaker_wav"] != "/app/speakers/patrick.wav" {
+			t.Errorf("speaker = %q, want /app/speakers/patrick.wav", req["speaker_wav"])
 		}
 
 		_, _ = w.Write(make([]byte, 48000))
@@ -202,8 +202,8 @@ func TestGenerateSpeechWithVoiceFallback(t *testing.T) {
 			return
 		}
 
-		if req["speaker_wav"] != "default" {
-			t.Errorf("speaker = %q, want default", req["speaker_wav"])
+		if req["speaker_wav"] != "/app/speakers/default.wav" {
+			t.Errorf("speaker = %q, want /app/speakers/default.wav", req["speaker_wav"])
 		}
 
 		_, _ = w.Write(make([]byte, 48000))

@@ -58,7 +58,8 @@ func (s *AudioStitcher) Stitch(ctx context.Context, segments []AudioSegment) (*S
 	}()
 
 	for i, seg := range segments {
-		tempPath := filepath.Join(s.tempDir, fmt.Sprintf("seg_%d.mp3", i))
+		ext := detectAudioFormat(seg.Audio)
+		tempPath := filepath.Join(s.tempDir, fmt.Sprintf("seg_%d%s", i, ext))
 		if err := os.WriteFile(tempPath, seg.Audio, 0644); err != nil {
 			return nil, fmt.Errorf("failed to write segment %d: %w", i, err)
 		}
@@ -87,7 +88,8 @@ func (s *AudioStitcher) Stitch(ctx context.Context, segments []AudioSegment) (*S
 		"-f", "concat",
 		"-safe", "0",
 		"-i", listPath,
-		"-c", "copy",
+		"-acodec", "libmp3lame",
+		"-q:a", "2",
 		outputPath,
 	}
 
@@ -128,4 +130,23 @@ func (s *AudioStitcher) adjustTimings(segments []AudioSegment) ([]tts.WordTiming
 	}
 
 	return allTimings, offset
+}
+
+func detectAudioFormat(data []byte) string {
+	if len(data) < 4 {
+		return ".bin"
+	}
+
+	// WAV: starts with "RIFF"
+	if data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F' {
+		return ".wav"
+	}
+
+	// MP3: starts with ID3 or 0xFF 0xFB
+	if (data[0] == 'I' && data[1] == 'D' && data[2] == '3') ||
+		(data[0] == 0xFF && (data[1]&0xE0) == 0xE0) {
+		return ".mp3"
+	}
+
+	return ".bin"
 }

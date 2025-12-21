@@ -89,9 +89,10 @@ func (c *Client) GenerateSpeechWithVoice(ctx context.Context, text string, voice
 }
 
 func (c *Client) synthesize(ctx context.Context, text, speaker string) ([]byte, error) {
+	speakerPath := fmt.Sprintf("/app/speakers/%s.wav", speaker)
 	reqBody := map[string]string{
 		"text":        text,
-		"speaker_wav": speaker,
+		"speaker_wav": speakerPath,
 		"language":    c.language,
 	}
 
