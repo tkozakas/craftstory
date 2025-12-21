@@ -18,23 +18,40 @@ import (
 const (
 	defaultFFmpegPath = "ffmpeg"
 	defaultFFprobe    = "ffprobe"
+	videoEndBuffer    = 1.5 // extra seconds of background video after audio ends
 )
 
 type Assembler struct {
-	ffmpegPath  string
-	ffprobe     string
-	outputDir   string
-	width       int
-	height      int
-	subtitleGen *SubtitleGenerator
-	bgProvider  storage.BackgroundProvider
+	ffmpegPath    string
+	ffprobe       string
+	outputDir     string
+	width         int
+	height        int
+	subtitleGen   *SubtitleGenerator
+	bgProvider    storage.BackgroundProvider
+	musicDir      string
+	musicVolume   float64
+	musicFadeIn   float64
+	musicFadeOut  float64
+	introPath     string
+	outroPath     string
+	introDuration float64
+	outroDuration float64
 }
 
 type AssemblerOptions struct {
-	OutputDir   string
-	Resolution  string
-	SubtitleGen *SubtitleGenerator
-	BgProvider  storage.BackgroundProvider
+	OutputDir     string
+	Resolution    string
+	SubtitleGen   *SubtitleGenerator
+	BgProvider    storage.BackgroundProvider
+	MusicDir      string
+	MusicVolume   float64
+	MusicFadeIn   float64
+	MusicFadeOut  float64
+	IntroPath     string
+	OutroPath     string
+	IntroDuration float64
+	OutroDuration float64
 }
 
 type ImageOverlay struct {
@@ -49,7 +66,7 @@ type AssembleRequest struct {
 	AudioPath     string
 	AudioDuration float64
 	Script        string
-	ScriptID      int64
+	OutputPath    string // optional, if empty will auto-generate
 	WordTimings   []elevenlabs.WordTiming
 	ImageOverlays []ImageOverlay
 }
@@ -73,14 +90,34 @@ func NewAssembler(outputDir string, subtitleGen *SubtitleGenerator, bgProvider s
 
 func NewAssemblerWithOptions(opts AssemblerOptions) *Assembler {
 	width, height := parseResolution(opts.Resolution)
+	musicVolume := opts.MusicVolume
+	if musicVolume == 0 {
+		musicVolume = 0.15
+	}
+	musicFadeIn := opts.MusicFadeIn
+	if musicFadeIn == 0 {
+		musicFadeIn = 1.0
+	}
+	musicFadeOut := opts.MusicFadeOut
+	if musicFadeOut == 0 {
+		musicFadeOut = 2.0
+	}
 	return &Assembler{
-		ffmpegPath:  defaultFFmpegPath,
-		ffprobe:     defaultFFprobe,
-		outputDir:   opts.OutputDir,
-		width:       width,
-		height:      height,
-		subtitleGen: opts.SubtitleGen,
-		bgProvider:  opts.BgProvider,
+		ffmpegPath:    defaultFFmpegPath,
+		ffprobe:       defaultFFprobe,
+		outputDir:     opts.OutputDir,
+		width:         width,
+		height:        height,
+		subtitleGen:   opts.SubtitleGen,
+		bgProvider:    opts.BgProvider,
+		musicDir:      opts.MusicDir,
+		musicVolume:   musicVolume,
+		musicFadeIn:   musicFadeIn,
+		musicFadeOut:  musicFadeOut,
+		introPath:     opts.IntroPath,
+		outroPath:     opts.OutroPath,
+		introDuration: opts.IntroDuration,
+		outroDuration: opts.OutroDuration,
 	}
 }
 
@@ -118,36 +155,62 @@ func (a *Assembler) Assemble(ctx context.Context, req AssembleRequest) (*Assembl
 	}
 	assContent := a.subtitleGen.ToASS(subtitles)
 
-	assPath := filepath.Join(a.outputDir, fmt.Sprintf("subs_%d.ass", req.ScriptID))
+	outputPath := req.OutputPath
+	if outputPath == "" {
+		outputPath = filepath.Join(a.outputDir, fmt.Sprintf("video_%d.mp4", time.Now().Unix()))
+	}
+
+	outputDir := filepath.Dir(outputPath)
+	assPath := filepath.Join(outputDir, fmt.Sprintf("subs_%d.ass", time.Now().UnixNano()))
 	if err := os.WriteFile(assPath, []byte(assContent), 0644); err != nil {
 		return nil, fmt.Errorf("failed to write subtitle file: %w", err)
 	}
 	defer func() { _ = os.Remove(assPath) }()
 
-	outputPath := filepath.Join(a.outputDir, fmt.Sprintf("video_%d_%d.mp4", req.ScriptID, time.Now().Unix()))
+	musicPath := a.selectMusicTrack()
+	filterComplex := a.buildFilterComplex(assPath, req.ImageOverlays, musicPath, req.AudioDuration)
 
-	filterComplex := a.buildFilterComplex(assPath, req.ImageOverlays)
+	// Build main content video
+	mainVideoPath := outputPath
+	needsConcat := a.introPath != "" || a.outroPath != ""
+	if needsConcat {
+		mainVideoPath = filepath.Join(outputDir, fmt.Sprintf("main_%d.mp4", time.Now().UnixNano()))
+		defer func() { _ = os.Remove(mainVideoPath) }()
+	}
 
-	args := a.buildFFmpegArgs(backgroundClip, req.AudioPath, startTime, req.AudioDuration, filterComplex, req.ImageOverlays, outputPath)
+	args := a.buildFFmpegArgs(backgroundClip, req.AudioPath, musicPath, startTime, req.AudioDuration, filterComplex, req.ImageOverlays, mainVideoPath)
 
 	cmd := exec.CommandContext(ctx, a.ffmpegPath, args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("ffmpeg failed: %w, output: %s", err, string(output))
 	}
 
+	totalDuration := req.AudioDuration
+
+	// Concatenate intro/outro if configured
+	if needsConcat {
+		introDur, outroDur, err := a.concatIntroOutro(ctx, mainVideoPath, outputPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to concat intro/outro: %w", err)
+		}
+		totalDuration += introDur + outroDur
+	}
+
 	return &AssembleResult{
 		OutputPath: outputPath,
-		Duration:   req.AudioDuration,
+		Duration:   totalDuration,
 	}, nil
 }
 
-func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay) string {
+func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, musicPath string, duration float64) string {
 	scaleFilter := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d",
 		a.width, a.height, a.width, a.height)
 
+	audioFilter := a.buildAudioFilter(musicPath, duration)
+
 	if len(overlays) == 0 {
-		return fmt.Sprintf("[0:v]%s,ass=%s[v];[0:a]volume=0.1[bga];[1:a]volume=1.0[voice];[bga][voice]amix=inputs=2:duration=first[a]",
-			scaleFilter, assPath)
+		return fmt.Sprintf("[0:v]%s,ass=%s[v];%s",
+			scaleFilter, assPath, audioFilter)
 	}
 
 	var filters []string
@@ -156,7 +219,7 @@ func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay) 
 
 	lastOutput := "base"
 	for i, overlay := range overlays {
-		inputIdx := i + 2
+		inputIdx := a.imageInputIndex(i, musicPath)
 		scaledName := fmt.Sprintf("img%d", i)
 		outputName := fmt.Sprintf("v%d", i)
 
@@ -177,18 +240,24 @@ func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay) 
 	}
 
 	filters = append(filters, fmt.Sprintf("[%s]null[v]", lastOutput))
-	filters = append(filters, "[0:a]volume=0.1[bga];[1:a]volume=1.0[voice];[bga][voice]amix=inputs=2:duration=first[a]")
+	filters = append(filters, audioFilter)
 
 	return strings.Join(filters, ";")
 }
 
-func (a *Assembler) buildFFmpegArgs(bgClip, audioPath string, startTime, duration float64, filterComplex string, overlays []ImageOverlay, outputPath string) []string {
+func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTime, duration float64, filterComplex string, overlays []ImageOverlay, outputPath string) []string {
+	videoDuration := duration + videoEndBuffer
+
 	args := []string{
 		"-y",
 		"-ss", fmt.Sprintf("%.2f", startTime),
-		"-t", fmt.Sprintf("%.2f", duration),
+		"-t", fmt.Sprintf("%.2f", videoDuration),
 		"-i", bgClip,
 		"-i", audioPath,
+	}
+
+	if musicPath != "" {
+		args = append(args, "-i", musicPath)
 	}
 
 	for _, overlay := range overlays {
@@ -238,4 +307,170 @@ func (a *Assembler) randomStartTime(clipDuration, neededDuration float64) float6
 
 	maxStart := clipDuration - neededDuration
 	return rand.Float64() * maxStart
+}
+
+func (a *Assembler) selectMusicTrack() string {
+	if a.musicDir == "" {
+		return ""
+	}
+
+	entries, err := os.ReadDir(a.musicDir)
+	if err != nil {
+		return ""
+	}
+
+	var musicFiles []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := strings.ToLower(entry.Name())
+		if strings.HasSuffix(name, ".mp3") || strings.HasSuffix(name, ".wav") || strings.HasSuffix(name, ".m4a") {
+			musicFiles = append(musicFiles, filepath.Join(a.musicDir, entry.Name()))
+		}
+	}
+
+	if len(musicFiles) == 0 {
+		return ""
+	}
+
+	return musicFiles[rand.Intn(len(musicFiles))]
+}
+
+func (a *Assembler) buildAudioFilter(musicPath string, duration float64) string {
+	if musicPath == "" {
+		return "[0:a]volume=0.1[bga];[1:a]volume=1.0[voice];[bga][voice]amix=inputs=2:duration=longest[a]"
+	}
+
+	fadeOutStart := duration - a.musicFadeOut
+	if fadeOutStart < 0 {
+		fadeOutStart = 0
+	}
+
+	return fmt.Sprintf(
+		"[0:a]volume=0.1[bga];"+
+			"[1:a]volume=1.0[voice];"+
+			"[2:a]volume=%.2f,afade=t=in:st=0:d=%.2f,afade=t=out:st=%.2f:d=%.2f[music];"+
+			"[bga][voice][music]amix=inputs=3:duration=longest:normalize=0[a]",
+		a.musicVolume, a.musicFadeIn, fadeOutStart, a.musicFadeOut,
+	)
+}
+
+func (a *Assembler) imageInputIndex(imageIdx int, musicPath string) int {
+	base := 2 // 0=video, 1=voice audio
+	if musicPath != "" {
+		base = 3 // 0=video, 1=voice audio, 2=music
+	}
+	return base + imageIdx
+}
+
+func (a *Assembler) concatIntroOutro(ctx context.Context, mainVideoPath, outputPath string) (float64, float64, error) {
+	outputDir := filepath.Dir(outputPath)
+	var clips []string
+	var introDur, outroDur float64
+
+	// Prepare intro if exists
+	if a.introPath != "" {
+		if _, err := os.Stat(a.introPath); err == nil {
+			introClip, dur, err := a.prepareClip(ctx, a.introPath, a.introDuration, outputDir, "intro")
+			if err != nil {
+				return 0, 0, fmt.Errorf("failed to prepare intro: %w", err)
+			}
+			clips = append(clips, introClip)
+			introDur = dur
+			if introClip != a.introPath {
+				defer func() { _ = os.Remove(introClip) }()
+			}
+		}
+	}
+
+	// Add main video
+	clips = append(clips, mainVideoPath)
+
+	// Prepare outro if exists
+	if a.outroPath != "" {
+		if _, err := os.Stat(a.outroPath); err == nil {
+			outroClip, dur, err := a.prepareClip(ctx, a.outroPath, a.outroDuration, outputDir, "outro")
+			if err != nil {
+				return 0, 0, fmt.Errorf("failed to prepare outro: %w", err)
+			}
+			clips = append(clips, outroClip)
+			outroDur = dur
+			if outroClip != a.outroPath {
+				defer func() { _ = os.Remove(outroClip) }()
+			}
+		}
+	}
+
+	// If only main video, just copy it
+	if len(clips) == 1 {
+		return 0, 0, nil
+	}
+
+	// Create concat list
+	listPath := filepath.Join(outputDir, fmt.Sprintf("concat_%d.txt", time.Now().UnixNano()))
+	var listContent string
+	for _, clip := range clips {
+		absPath, err := filepath.Abs(clip)
+		if err != nil {
+			return 0, 0, fmt.Errorf("failed to get absolute path: %w", err)
+		}
+		listContent += fmt.Sprintf("file '%s'\n", absPath)
+	}
+	if err := os.WriteFile(listPath, []byte(listContent), 0644); err != nil {
+		return 0, 0, fmt.Errorf("failed to write concat list: %w", err)
+	}
+	defer func() { _ = os.Remove(listPath) }()
+
+	// Concatenate using ffmpeg
+	args := []string{
+		"-y",
+		"-f", "concat",
+		"-safe", "0",
+		"-i", listPath,
+		"-c", "copy",
+		outputPath,
+	}
+
+	cmd := exec.CommandContext(ctx, a.ffmpegPath, args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return 0, 0, fmt.Errorf("ffmpeg concat failed: %w, output: %s", err, string(output))
+	}
+
+	return introDur, outroDur, nil
+}
+
+func (a *Assembler) prepareClip(ctx context.Context, clipPath string, maxDuration float64, outputDir, prefix string) (string, float64, error) {
+	duration, err := a.getVideoDuration(ctx, clipPath)
+	if err != nil {
+		return "", 0, err
+	}
+
+	// If no duration limit or clip is shorter, use as-is but re-encode for compatibility
+	targetDuration := duration
+	if maxDuration > 0 && duration > maxDuration {
+		targetDuration = maxDuration
+	}
+
+	// Re-encode to ensure same codec/format for concat
+	outputClip := filepath.Join(outputDir, fmt.Sprintf("%s_%d.mp4", prefix, time.Now().UnixNano()))
+
+	args := []string{
+		"-y",
+		"-i", clipPath,
+		"-t", fmt.Sprintf("%.2f", targetDuration),
+		"-vf", fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d", a.width, a.height, a.width, a.height),
+		"-c:v", "libx264",
+		"-c:a", "aac",
+		"-ar", "44100",
+		"-preset", "fast",
+		outputClip,
+	}
+
+	cmd := exec.CommandContext(ctx, a.ffmpegPath, args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return "", 0, fmt.Errorf("ffmpeg re-encode failed: %w, output: %s", err, string(output))
+	}
+
+	return outputClip, targetDuration, nil
 }

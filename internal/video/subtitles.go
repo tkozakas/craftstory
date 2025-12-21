@@ -14,20 +14,70 @@ type Subtitle struct {
 }
 
 type SubtitleGenerator struct {
-	fontName string
-	fontSize int
+	fontName     string
+	fontSize     int
+	primaryColor string // ASS format: &HAABBGGRR
+	outlineColor string
+	outlineSize  int
+	shadowSize   int
+	bold         bool
 }
 
 type SubtitleOptions struct {
-	FontName string
-	FontSize int
+	FontName     string
+	FontSize     int
+	PrimaryColor string // hex color like "#FFFFFF" or ASS format
+	OutlineColor string
+	OutlineSize  int
+	ShadowSize   int
+	Bold         bool
 }
 
 func NewSubtitleGenerator(opts SubtitleOptions) *SubtitleGenerator {
-	return &SubtitleGenerator{
-		fontName: opts.FontName,
-		fontSize: opts.FontSize,
+	primaryColor := "&H00FFFFFF" // white default
+	if opts.PrimaryColor != "" {
+		primaryColor = toASSColor(opts.PrimaryColor)
 	}
+
+	outlineColor := "&H00000000" // black default
+	if opts.OutlineColor != "" {
+		outlineColor = toASSColor(opts.OutlineColor)
+	}
+
+	outlineSize := 4
+	if opts.OutlineSize > 0 {
+		outlineSize = opts.OutlineSize
+	}
+
+	shadowSize := 2
+	if opts.ShadowSize >= 0 {
+		shadowSize = opts.ShadowSize
+	}
+
+	return &SubtitleGenerator{
+		fontName:     opts.FontName,
+		fontSize:     opts.FontSize,
+		primaryColor: primaryColor,
+		outlineColor: outlineColor,
+		outlineSize:  outlineSize,
+		shadowSize:   shadowSize,
+		bold:         opts.Bold,
+	}
+}
+
+func toASSColor(color string) string {
+	if strings.HasPrefix(color, "&H") {
+		return color
+	}
+	// Convert #RRGGBB to &H00BBGGRR (ASS format with alpha)
+	color = strings.TrimPrefix(color, "#")
+	if len(color) == 6 {
+		r := color[0:2]
+		g := color[2:4]
+		b := color[4:6]
+		return fmt.Sprintf("&H00%s%s%s", b, g, r)
+	}
+	return "&H00FFFFFF"
 }
 
 func (g *SubtitleGenerator) GenerateFromTimings(timings []elevenlabs.WordTiming) []Subtitle {
@@ -75,10 +125,17 @@ func (g *SubtitleGenerator) ToASS(subtitles []Subtitle) string {
 	sb.WriteString("PlayResY: 1920\n")
 	sb.WriteString("\n")
 
+	// Bold: -1 = true, 0 = false in ASS format
+	boldVal := 0
+	if g.bold {
+		boldVal = -1
+	}
+
 	sb.WriteString("[V4+ Styles]\n")
 	sb.WriteString("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
-	sb.WriteString(fmt.Sprintf("Style: Default,%s,%d,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,0,5,10,10,50,1\n",
-		g.fontName, g.fontSize))
+	// Style format: BorderStyle=1 (outline+shadow), Alignment=5 (center middle)
+	sb.WriteString(fmt.Sprintf("Style: Default,%s,%d,%s,%s,%s,&H80000000,%d,0,0,0,100,100,0,0,1,%d,%d,5,10,10,50,1\n",
+		g.fontName, g.fontSize, g.primaryColor, g.primaryColor, g.outlineColor, boldVal, g.outlineSize, g.shadowSize))
 	sb.WriteString("\n")
 
 	sb.WriteString("[Events]\n")

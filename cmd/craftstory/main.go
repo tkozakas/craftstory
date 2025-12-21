@@ -84,8 +84,8 @@ func handleGenerate(cmd *flag.FlagSet, cfg *config.Config) {
 		fmt.Printf("\n✅ Video generated successfully!\n")
 		fmt.Printf("┌─────────────────────────────────────────────────────────────\n")
 		fmt.Printf("│ Title:    %s\n", result.Title)
+		fmt.Printf("│ Output:   %s\n", result.OutputDir)
 		fmt.Printf("│ Video:    %s\n", result.VideoPath)
-		fmt.Printf("│ Audio:    %s\n", result.AudioPath)
 		fmt.Printf("│ Duration: %.2f seconds\n", result.Duration)
 		fmt.Printf("└─────────────────────────────────────────────────────────────\n\n")
 	}
@@ -176,8 +176,13 @@ func initService(cfg *config.Config) *app.Service {
 	ytUploader := uploader.NewYouTubeUploader(ytAuth)
 
 	subtitleGen := video.NewSubtitleGenerator(video.SubtitleOptions{
-		FontName: cfg.Subtitles.FontName,
-		FontSize: cfg.Subtitles.FontSize,
+		FontName:     cfg.Subtitles.FontName,
+		FontSize:     cfg.Subtitles.FontSize,
+		PrimaryColor: cfg.Subtitles.PrimaryColor,
+		OutlineColor: cfg.Subtitles.OutlineColor,
+		OutlineSize:  cfg.Subtitles.OutlineSize,
+		ShadowSize:   cfg.Subtitles.ShadowSize,
+		Bold:         cfg.Subtitles.Bold,
 	})
 
 	var bgProvider storage.BackgroundProvider

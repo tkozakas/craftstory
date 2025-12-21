@@ -24,9 +24,9 @@ content:
 visuals:
   enabled: true
   position: "top"
-  display_time: 1.5
-  image_width: 600
-  image_height: 450
+  display_time: 2.0
+  image_width: 800
+  image_height: 600
 
 video:
   background_dir: "./assets/backgrounds"
@@ -35,9 +35,27 @@ video:
   resolution: "1080x1920"
   duration: 60
 
+music:
+  enabled: true
+  dir: "./assets/music"
+  volume: 0.15
+  fade_in: 1.0
+  fade_out: 2.0
+
+intro_outro:
+  intro_path: ""  # Optional: path to intro video clip (e.g., "./assets/intro.mp4")
+  outro_path: ""  # Optional: path to outro video clip (e.g., "./assets/outro.mp4")
+  intro_duration: 0  # Override duration (0 = use full clip)
+  outro_duration: 0  # Override duration (0 = use full clip)
+
 subtitles:
-  font_name: "Arial"
-  font_size: 148
+  font_name: "Montserrat Black"
+  font_size: 160
+  primary_color: "#FFFFFF"
+  outline_color: "#000000"
+  outline_size: 6
+  shadow_size: 4
+  bold: true
 
 youtube:
   default_tags:

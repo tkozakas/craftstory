@@ -23,8 +23,10 @@ const (
 	defaultDeepSeekPrompt   = "You are a creative scriptwriter for short-form viral videos. Generate engaging, high-retention scripts with hooks in the first 3 seconds. Use short punchy sentences."
 	defaultElevenLabsVoice  = "JBFqnCBsd6RMkjVDRZzb"
 	defaultElevenLabsModel  = "eleven_flash_v2_5"
-	defaultSubtitleFont     = "Arial"
-	defaultSubtitleSize     = 148
+	defaultSubtitleFont     = "Montserrat Black"
+	defaultSubtitleSize     = 128
+	defaultOutlineSize      = 5
+	defaultShadowSize       = 3
 	defaultGCSBackgroundDir = "backgrounds"
 )
 
@@ -49,6 +51,8 @@ type Config struct {
 	ElevenLabs ElevenLabsConfig `yaml:"elevenlabs"`
 	Content    ContentConfig    `yaml:"content"`
 	Video      VideoConfig      `yaml:"video"`
+	Music      MusicConfig      `yaml:"music"`
+	IntroOutro IntroOutroConfig `yaml:"intro_outro"`
 	Subtitles  SubtitlesConfig  `yaml:"subtitles"`
 	YouTube    YouTubeConfig    `yaml:"youtube"`
 	GCS        GCSConfig        `yaml:"gcs"`
@@ -82,9 +86,29 @@ type VideoConfig struct {
 	Duration      int    `yaml:"duration"`
 }
 
+type MusicConfig struct {
+	Enabled bool    `yaml:"enabled"`
+	Dir     string  `yaml:"dir"`
+	Volume  float64 `yaml:"volume"`
+	FadeIn  float64 `yaml:"fade_in"`
+	FadeOut float64 `yaml:"fade_out"`
+}
+
+type IntroOutroConfig struct {
+	IntroPath     string  `yaml:"intro_path"`
+	OutroPath     string  `yaml:"outro_path"`
+	IntroDuration float64 `yaml:"intro_duration"`
+	OutroDuration float64 `yaml:"outro_duration"`
+}
+
 type SubtitlesConfig struct {
-	FontName string `yaml:"font_name"`
-	FontSize int    `yaml:"font_size"`
+	FontName     string `yaml:"font_name"`
+	FontSize     int    `yaml:"font_size"`
+	PrimaryColor string `yaml:"primary_color"`
+	OutlineColor string `yaml:"outline_color"`
+	OutlineSize  int    `yaml:"outline_size"`
+	ShadowSize   int    `yaml:"shadow_size"`
+	Bold         bool   `yaml:"bold"`
 }
 
 type YouTubeConfig struct {
@@ -104,6 +128,7 @@ type VisualsConfig struct {
 	DisplayTime float64 `yaml:"display_time"`
 	ImageWidth  int     `yaml:"image_width"`
 	ImageHeight int     `yaml:"image_height"`
+	MinGap      float64 `yaml:"min_gap"`
 }
 
 func Load() *Config {
@@ -145,6 +170,7 @@ func applyDefaults(cfg *Config) {
 	applyElevenLabsDefaults(cfg)
 	applyContentDefaults(cfg)
 	applyVideoDefaults(cfg)
+	applyMusicDefaults(cfg)
 	applySubtitlesDefaults(cfg)
 	applyYouTubeDefaults(cfg)
 	applyGCSDefaults(cfg)
@@ -202,12 +228,39 @@ func applyVideoDefaults(cfg *Config) {
 	}
 }
 
+func applyMusicDefaults(cfg *Config) {
+	if cfg.Music.Dir == "" {
+		cfg.Music.Dir = "./assets/music"
+	}
+	if cfg.Music.Volume == 0 {
+		cfg.Music.Volume = 0.15
+	}
+	if cfg.Music.FadeIn == 0 {
+		cfg.Music.FadeIn = 1.0
+	}
+	if cfg.Music.FadeOut == 0 {
+		cfg.Music.FadeOut = 2.0
+	}
+}
+
 func applySubtitlesDefaults(cfg *Config) {
 	if cfg.Subtitles.FontName == "" {
 		cfg.Subtitles.FontName = defaultSubtitleFont
 	}
 	if cfg.Subtitles.FontSize == 0 {
 		cfg.Subtitles.FontSize = defaultSubtitleSize
+	}
+	if cfg.Subtitles.PrimaryColor == "" {
+		cfg.Subtitles.PrimaryColor = "#FFFFFF"
+	}
+	if cfg.Subtitles.OutlineColor == "" {
+		cfg.Subtitles.OutlineColor = "#000000"
+	}
+	if cfg.Subtitles.OutlineSize == 0 {
+		cfg.Subtitles.OutlineSize = defaultOutlineSize
+	}
+	if cfg.Subtitles.ShadowSize == 0 {
+		cfg.Subtitles.ShadowSize = defaultShadowSize
 	}
 }
 
@@ -238,6 +291,9 @@ func applyVisualsDefaults(cfg *Config) {
 	}
 	if cfg.Visuals.ImageHeight == 0 {
 		cfg.Visuals.ImageHeight = 450
+	}
+	if cfg.Visuals.MinGap == 0 {
+		cfg.Visuals.MinGap = 3.0
 	}
 }
 

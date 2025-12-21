@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ import (
 	"craftstory/internal/video"
 )
 
+var sanitizeRegex = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
+
 type Pipeline struct {
 	svc *Service
 }
@@ -27,9 +30,79 @@ type Pipeline struct {
 type GenerateResult struct {
 	Title         string
 	ScriptContent string
+	OutputDir     string
 	AudioPath     string
 	VideoPath     string
 	Duration      float64
+}
+
+type BatchResult struct {
+	Results   []*GenerateResult
+	Errors    []BatchError
+	Succeeded int
+	Failed    int
+}
+
+type BatchError struct {
+	Topic string
+	Error error
+}
+
+type session struct {
+	id        string
+	dir       string
+	baseDir   string
+	timestamp time.Time
+}
+
+func newSession(baseDir string) *session {
+	ts := time.Now()
+	id := ts.Format("20060102_150405")
+	return &session{
+		id:        id,
+		baseDir:   baseDir,
+		timestamp: ts,
+	}
+}
+
+func (s *session) finalize(title string) error {
+	sanitized := sanitizeForPath(title)
+	if sanitized == "" {
+		sanitized = "untitled"
+	}
+	if len(sanitized) > 50 {
+		sanitized = sanitized[:50]
+	}
+
+	s.dir = filepath.Join(s.baseDir, fmt.Sprintf("%s_%s", s.id, sanitized))
+	if err := os.MkdirAll(s.dir, 0755); err != nil {
+		return fmt.Errorf("failed to create session directory: %w", err)
+	}
+	slog.Info("created session directory", "path", s.dir)
+	return nil
+}
+
+func (s *session) audioPath() string {
+	return filepath.Join(s.dir, "audio.mp3")
+}
+
+func (s *session) videoPath() string {
+	return filepath.Join(s.dir, "video.mp4")
+}
+
+func (s *session) scriptPath() string {
+	return filepath.Join(s.dir, "script.txt")
+}
+
+func (s *session) imagePath(index int, ext string) string {
+	return filepath.Join(s.dir, fmt.Sprintf("image_%d%s", index, ext))
+}
+
+func sanitizeForPath(s string) string {
+	s = strings.ToLower(s)
+	s = sanitizeRegex.ReplaceAllString(s, "_")
+	s = strings.Trim(s, "_")
+	return s
 }
 
 func NewPipeline(svc *Service) *Pipeline {
@@ -55,6 +128,7 @@ func (p *Pipeline) Generate(ctx context.Context, topic string) (*GenerateResult,
 
 func (p *Pipeline) generateSingleVoice(ctx context.Context, topic string) (*GenerateResult, error) {
 	cfg := p.svc.Config()
+	sess := newSession(cfg.Video.OutputDir)
 
 	var script string
 	var visuals []deepseek.VisualCue
@@ -90,15 +164,24 @@ func (p *Pipeline) generateSingleVoice(ctx context.Context, topic string) (*Gene
 		}
 	}
 
+	title := p.generateTitle(ctx, script, topic)
+
+	if err := sess.finalize(title); err != nil {
+		return nil, err
+	}
+
+	if err := os.WriteFile(sess.scriptPath(), []byte(script), 0644); err != nil {
+		slog.Warn("failed to save script file", "error", err)
+	}
+
 	slog.Info("generating speech", "script_length", len(script))
 	speechResult, err := p.svc.ElevenLabs().GenerateSpeechWithTimings(ctx, script)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate speech: %w", err)
 	}
 
-	audioFilename := fmt.Sprintf("audio_%d.mp3", time.Now().Unix())
-	audioPath, err := p.svc.Storage().SaveAudio(speechResult.Audio, audioFilename)
-	if err != nil {
+	audioPath := sess.audioPath()
+	if err := os.WriteFile(audioPath, speechResult.Audio, 0644); err != nil {
 		return nil, fmt.Errorf("failed to save audio: %w", err)
 	}
 	slog.Info("saved audio", "path", audioPath)
@@ -107,14 +190,14 @@ func (p *Pipeline) generateSingleVoice(ctx context.Context, topic string) (*Gene
 
 	var imageOverlays []video.ImageOverlay
 	if len(visuals) > 0 {
-		imageOverlays = p.fetchVisualImages(ctx, visuals, speechResult.Timings)
+		imageOverlays = p.fetchVisualImagesWithSession(ctx, sess, visuals, speechResult.Timings)
 	}
 
 	assembleReq := video.AssembleRequest{
 		AudioPath:     audioPath,
 		AudioDuration: audioDuration,
 		Script:        script,
-		ScriptID:      time.Now().Unix(),
+		OutputPath:    sess.videoPath(),
 		WordTimings:   speechResult.Timings,
 		ImageOverlays: imageOverlays,
 	}
@@ -126,18 +209,17 @@ func (p *Pipeline) generateSingleVoice(ctx context.Context, topic string) (*Gene
 	}
 	slog.Info("video assembled", "path", result.OutputPath)
 
-	title := p.generateTitle(ctx, script, topic)
-
 	return &GenerateResult{
 		Title:         title,
 		ScriptContent: script,
+		OutputDir:     sess.dir,
 		AudioPath:     audioPath,
 		VideoPath:     result.OutputPath,
 		Duration:      result.Duration,
 	}, nil
 }
 
-func (p *Pipeline) fetchVisualImages(ctx context.Context, visuals []deepseek.VisualCue, timings []elevenlabs.WordTiming) []video.ImageOverlay {
+func (p *Pipeline) fetchVisualImagesWithSession(ctx context.Context, sess *session, visuals []deepseek.VisualCue, timings []elevenlabs.WordTiming) []video.ImageOverlay {
 	cfg := p.svc.Config()
 	overlays := make([]video.ImageOverlay, 0, len(visuals))
 
@@ -168,7 +250,7 @@ func (p *Pipeline) fetchVisualImages(ctx context.Context, visuals []deepseek.Vis
 		}
 
 		slog.Info("searching image", "query", cue.SearchQuery)
-		results, err := p.svc.ImageSearch().Search(ctx, cue.SearchQuery, 1)
+		results, err := p.svc.ImageSearch().Search(ctx, cue.SearchQuery, 5)
 		if err != nil {
 			slog.Warn("failed to search image",
 				"query", cue.SearchQuery,
@@ -184,32 +266,56 @@ func (p *Pipeline) fetchVisualImages(ctx context.Context, visuals []deepseek.Vis
 			continue
 		}
 
-		slog.Info("downloading image",
-			"url", results[0].ImageURL,
-			"thumbnail", results[0].ThumbURL,
-		)
-
-		imageData, err := p.svc.ImageSearch().DownloadImage(ctx, results[0].ImageURL)
-		if err != nil {
-			slog.Warn("failed to download image",
-				"url", results[0].ImageURL,
-				"error", err,
+		var imageData []byte
+		var selectedResult int
+		for j, result := range results {
+			slog.Info("trying image",
+				"index", j,
+				"url", result.ImageURL,
+				"width", result.Width,
+				"height", result.Height,
 			)
-			continue
+
+			data, err := p.svc.ImageSearch().DownloadImage(ctx, result.ImageURL)
+			if err != nil {
+				slog.Warn("failed to download image",
+					"url", result.ImageURL,
+					"error", err,
+				)
+				continue
+			}
+
+			if !isValidImage(data) {
+				slog.Warn("invalid image data, trying next", "url", result.ImageURL)
+				continue
+			}
+
+			if len(data) < 10000 {
+				slog.Warn("image too small, trying next", "url", result.ImageURL, "size", len(data))
+				continue
+			}
+
+			imageData = data
+			selectedResult = j
+			slog.Info("downloaded quality image",
+				"url", result.ImageURL,
+				"size_bytes", len(data),
+				"width", result.Width,
+				"height", result.Height,
+			)
+			break
 		}
 
-		slog.Info("downloaded image", "size_bytes", len(imageData))
-
-		if !isValidImage(imageData) {
-			slog.Warn("invalid image data, skipping", "url", results[0].ImageURL)
+		if imageData == nil {
+			slog.Warn("could not download any valid image for query", "query", cue.SearchQuery)
 			continue
 		}
 
 		ext := ".jpg"
-		if strings.Contains(results[0].ImageURL, ".png") {
+		if strings.Contains(results[selectedResult].ImageURL, ".png") {
 			ext = ".png"
 		}
-		imagePath := filepath.Join(cfg.Video.OutputDir, fmt.Sprintf("img_%d_%d%s", time.Now().UnixNano(), cue.WordIndex, ext))
+		imagePath := sess.imagePath(i, ext)
 		if err := os.WriteFile(imagePath, imageData, 0644); err != nil {
 			slog.Warn("failed to save image", "path", imagePath, "error", err)
 			continue
@@ -218,7 +324,12 @@ func (p *Pipeline) fetchVisualImages(ctx context.Context, visuals []deepseek.Vis
 		slog.Info("saved image", "path", imagePath)
 
 		startTime := timings[cue.WordIndex].StartTime
-		endTime := startTime + cfg.Visuals.DisplayTime
+
+		displayDuration := cfg.Visuals.DisplayTime
+		if cue.Duration > 0 {
+			displayDuration = cue.Duration
+		}
+		endTime := startTime + displayDuration
 
 		overlays = append(overlays, video.ImageOverlay{
 			ImagePath: imagePath,
@@ -233,17 +344,21 @@ func (p *Pipeline) fetchVisualImages(ctx context.Context, visuals []deepseek.Vis
 			"path", imagePath,
 			"start", startTime,
 			"end", endTime,
+			"duration", displayDuration,
 			"width", cfg.Visuals.ImageWidth,
 			"height", cfg.Visuals.ImageHeight,
 		)
 	}
 
 	slog.Info("finished fetching visuals", "total_overlays", len(overlays))
+	overlays = p.enforceImageConstraints(overlays)
+
 	return overlays
 }
 
 func (p *Pipeline) generateConversation(ctx context.Context, topic string) (*GenerateResult, error) {
 	cfg := p.svc.Config()
+	sess := newSession(cfg.Video.OutputDir)
 
 	speakerNames := make([]string, len(cfg.ElevenLabs.Voices))
 	voiceMap := make(map[string]elevenlabs.VoiceConfig)
@@ -270,6 +385,16 @@ func (p *Pipeline) generateConversation(ctx context.Context, topic string) (*Gen
 
 	slog.Info("parsed conversation", "lines", len(parsed.Lines), "speakers", parsed.Speakers())
 
+	title := p.generateTitle(ctx, script, topic)
+
+	if err := sess.finalize(title); err != nil {
+		return nil, err
+	}
+
+	if err := os.WriteFile(sess.scriptPath(), []byte(script), 0644); err != nil {
+		slog.Warn("failed to save script file", "error", err)
+	}
+
 	segments := make([]video.AudioSegment, 0, len(parsed.Lines))
 	for i, line := range parsed.Lines {
 		voice, ok := voiceMap[line.Speaker]
@@ -290,15 +415,14 @@ func (p *Pipeline) generateConversation(ctx context.Context, topic string) (*Gen
 		})
 	}
 
-	stitcher := video.NewAudioStitcher(cfg.Video.OutputDir)
+	stitcher := video.NewAudioStitcher(sess.dir)
 	stitched, err := stitcher.Stitch(ctx, segments)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stitch audio: %w", err)
 	}
 
-	audioFilename := fmt.Sprintf("audio_%d.mp3", time.Now().Unix())
-	audioPath, err := p.svc.Storage().SaveAudio(stitched.Data, audioFilename)
-	if err != nil {
+	audioPath := sess.audioPath()
+	if err := os.WriteFile(audioPath, stitched.Data, 0644); err != nil {
 		return nil, fmt.Errorf("failed to save audio: %w", err)
 	}
 	slog.Info("saved stitched audio", "path", audioPath, "duration", stitched.Duration)
@@ -308,7 +432,7 @@ func (p *Pipeline) generateConversation(ctx context.Context, topic string) (*Gen
 		slog.Info("generating visual cues for conversation", "topic", topic)
 		visuals := p.generateVisualCues(ctx, parsed.FullText())
 		if len(visuals) > 0 {
-			imageOverlays = p.fetchVisualImages(ctx, visuals, stitched.Timings)
+			imageOverlays = p.fetchVisualImagesWithSession(ctx, sess, visuals, stitched.Timings)
 		}
 	}
 
@@ -316,7 +440,7 @@ func (p *Pipeline) generateConversation(ctx context.Context, topic string) (*Gen
 		AudioPath:     audioPath,
 		AudioDuration: stitched.Duration,
 		Script:        parsed.FullText(),
-		ScriptID:      time.Now().Unix(),
+		OutputPath:    sess.videoPath(),
 		WordTimings:   stitched.Timings,
 		ImageOverlays: imageOverlays,
 	}
@@ -328,11 +452,10 @@ func (p *Pipeline) generateConversation(ctx context.Context, topic string) (*Gen
 	}
 	slog.Info("video assembled", "path", result.OutputPath)
 
-	title := p.generateTitle(ctx, script, topic)
-
 	return &GenerateResult{
 		Title:         title,
 		ScriptContent: script,
+		OutputDir:     sess.dir,
 		AudioPath:     audioPath,
 		VideoPath:     result.OutputPath,
 		Duration:      result.Duration,
@@ -411,6 +534,114 @@ func (p *Pipeline) GenerateAndUpload(ctx context.Context, topic string) (*upload
 	return p.Upload(ctx, result.VideoPath, title, description)
 }
 
+func (p *Pipeline) GenerateBatch(ctx context.Context, topics []string) *BatchResult {
+	result := &BatchResult{
+		Results: make([]*GenerateResult, 0, len(topics)),
+		Errors:  make([]BatchError, 0),
+	}
+
+	for i, topic := range topics {
+		slog.Info("batch generation progress",
+			"current", i+1,
+			"total", len(topics),
+			"topic", topic,
+		)
+
+		genResult, err := p.Generate(ctx, topic)
+		if err != nil {
+			slog.Error("batch generation failed for topic",
+				"topic", topic,
+				"error", err,
+			)
+			result.Errors = append(result.Errors, BatchError{
+				Topic: topic,
+				Error: err,
+			})
+			result.Failed++
+			continue
+		}
+
+		result.Results = append(result.Results, genResult)
+		result.Succeeded++
+
+		slog.Info("batch generation succeeded",
+			"topic", topic,
+			"video", genResult.VideoPath,
+			"duration", genResult.Duration,
+		)
+	}
+
+	slog.Info("batch generation complete",
+		"succeeded", result.Succeeded,
+		"failed", result.Failed,
+		"total", len(topics),
+	)
+
+	return result
+}
+
+func (p *Pipeline) GenerateBatchFromReddit(ctx context.Context, subreddit string, limit int) *BatchResult {
+	slog.Info("fetching reddit posts for batch", "subreddit", subreddit, "limit", limit)
+	posts, err := p.svc.Reddit().GetTopStories(ctx, subreddit, limit)
+	if err != nil {
+		return &BatchResult{
+			Errors: []BatchError{{Topic: subreddit, Error: err}},
+			Failed: 1,
+		}
+	}
+
+	if len(posts) == 0 {
+		return &BatchResult{
+			Errors: []BatchError{{Topic: subreddit, Error: fmt.Errorf("no posts found")}},
+			Failed: 1,
+		}
+	}
+
+	topics := make([]string, 0, len(posts))
+	for _, post := range posts {
+		content := post.Title
+		if post.Selftext != "" {
+			content = post.Title + "\n\n" + post.Selftext
+		}
+		topics = append(topics, content)
+	}
+
+	return p.GenerateBatch(ctx, topics)
+}
+
+func (p *Pipeline) GenerateBatchAndUpload(ctx context.Context, topics []string) ([]*uploader.UploadResponse, []BatchError) {
+	batchResult := p.GenerateBatch(ctx, topics)
+
+	responses := make([]*uploader.UploadResponse, 0, len(batchResult.Results))
+	allErrors := append([]BatchError{}, batchResult.Errors...)
+
+	for _, result := range batchResult.Results {
+		title := result.Title + " #shorts"
+		description := fmt.Sprintf("Generated video\n\n#shorts #facts")
+
+		resp, err := p.Upload(ctx, result.VideoPath, title, description)
+		if err != nil {
+			slog.Error("failed to upload video",
+				"video", result.VideoPath,
+				"error", err,
+			)
+			allErrors = append(allErrors, BatchError{
+				Topic: result.Title,
+				Error: err,
+			})
+			continue
+		}
+
+		slog.Info("video uploaded",
+			"title", result.Title,
+			"url", resp.URL,
+		)
+		responses = append(responses, resp)
+	}
+
+	return responses, allErrors
+}
+
 func estimateAudioDuration(script string) float64 {
 	words := len(script) / 5
 	wordsPerSecond := 2.5
@@ -446,4 +677,48 @@ func isValidImage(data []byte) bool {
 	}
 	_, _, err := image.Decode(bytes.NewReader(data))
 	return err == nil
+}
+
+// enforceImageConstraints filters overlays to ensure minimum gap between images.
+// It keeps images that are at least MinGap seconds apart (end of previous to start of next).
+func (p *Pipeline) enforceImageConstraints(overlays []video.ImageOverlay) []video.ImageOverlay {
+	if len(overlays) <= 1 {
+		return overlays
+	}
+
+	cfg := p.svc.Config()
+	minGap := cfg.Visuals.MinGap
+
+	filtered := make([]video.ImageOverlay, 0, len(overlays))
+	filtered = append(filtered, overlays[0])
+
+	for i := 1; i < len(overlays); i++ {
+		lastEnd := filtered[len(filtered)-1].EndTime
+		currentStart := overlays[i].StartTime
+
+		gap := currentStart - lastEnd
+		if gap >= minGap {
+			filtered = append(filtered, overlays[i])
+			slog.Info("kept image overlay",
+				"index", i,
+				"start", overlays[i].StartTime,
+				"gap_from_previous", gap,
+			)
+		} else {
+			slog.Info("skipped image overlay (too close)",
+				"index", i,
+				"start", overlays[i].StartTime,
+				"gap_from_previous", gap,
+				"min_gap_required", minGap,
+			)
+		}
+	}
+
+	slog.Info("enforced image constraints",
+		"original_count", len(overlays),
+		"filtered_count", len(filtered),
+		"min_gap", minGap,
+	)
+
+	return filtered
 }

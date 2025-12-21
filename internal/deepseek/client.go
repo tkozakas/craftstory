@@ -61,8 +61,10 @@ type apiError struct {
 }
 
 type VisualCue struct {
-	SearchQuery string `json:"search_query"`
-	WordIndex   int    `json:"word_index"`
+	SearchQuery string  `json:"search_query"`
+	WordIndex   int     `json:"word_index"`
+	Timestamp   float64 `json:"timestamp,omitempty"` // seconds into the video
+	Duration    float64 `json:"duration,omitempty"`  // how long to display (seconds)
 }
 
 type ScriptWithVisuals struct {

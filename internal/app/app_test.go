@@ -7,6 +7,7 @@ import (
 
 	"craftstory/internal/elevenlabs"
 	"craftstory/internal/uploader"
+	"craftstory/internal/video"
 	"craftstory/pkg/config"
 )
 
@@ -233,6 +234,7 @@ func TestGenerateResultStruct(t *testing.T) {
 	result := GenerateResult{
 		Title:         "Test Title",
 		ScriptContent: "Test script",
+		OutputDir:     "/output/20250101_120000_test_title",
 		AudioPath:     "/path/to/audio.mp3",
 		VideoPath:     "/path/to/video.mp4",
 		Duration:      30.5,
@@ -243,6 +245,9 @@ func TestGenerateResultStruct(t *testing.T) {
 	}
 	if result.ScriptContent != "Test script" {
 		t.Errorf("ScriptContent = %q, want %q", result.ScriptContent, "Test script")
+	}
+	if result.OutputDir != "/output/20250101_120000_test_title" {
+		t.Errorf("OutputDir = %q, want %q", result.OutputDir, "/output/20250101_120000_test_title")
 	}
 	if result.AudioPath != "/path/to/audio.mp3" {
 		t.Errorf("AudioPath = %q, want %q", result.AudioPath, "/path/to/audio.mp3")
@@ -293,6 +298,137 @@ func TestIsValidImage(t *testing.T) {
 			got := isValidImage(tt.data)
 			if got != tt.want {
 				t.Errorf("isValidImage() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSanitizeForPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "simpleTitle",
+			input: "Hello World",
+			want:  "hello_world",
+		},
+		{
+			name:  "specialChars",
+			input: "What?! Is This... Real???",
+			want:  "what_is_this_real",
+		},
+		{
+			name:  "numbers",
+			input: "Top 10 Facts",
+			want:  "top_10_facts",
+		},
+		{
+			name:  "emojisAndSymbols",
+			input: "🔥 Amazing! $100 Deal",
+			want:  "amazing_100_deal",
+		},
+		{
+			name:  "alreadyClean",
+			input: "simple-title_here",
+			want:  "simple-title_here",
+		},
+		{
+			name:  "emptyString",
+			input: "",
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeForPath(tt.input)
+			if got != tt.want {
+				t.Errorf("sanitizeForPath(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEnforceImageConstraints(t *testing.T) {
+	tests := []struct {
+		name     string
+		overlays []video.ImageOverlay
+		minGap   float64
+		want     int
+	}{
+		{
+			name:     "emptyOverlays",
+			overlays: []video.ImageOverlay{},
+			minGap:   4.0,
+			want:     0,
+		},
+		{
+			name: "singleOverlay",
+			overlays: []video.ImageOverlay{
+				{ImagePath: "img1.jpg", StartTime: 0, EndTime: 1.5},
+			},
+			minGap: 4.0,
+			want:   1,
+		},
+		{
+			name: "allWellSpaced",
+			overlays: []video.ImageOverlay{
+				{ImagePath: "img1.jpg", StartTime: 0, EndTime: 1.5},
+				{ImagePath: "img2.jpg", StartTime: 6, EndTime: 7.5},
+				{ImagePath: "img3.jpg", StartTime: 12, EndTime: 13.5},
+			},
+			minGap: 4.0,
+			want:   3,
+		},
+		{
+			name: "someTooClose",
+			overlays: []video.ImageOverlay{
+				{ImagePath: "img1.jpg", StartTime: 0, EndTime: 1.5},
+				{ImagePath: "img2.jpg", StartTime: 2, EndTime: 3.5},   // gap 0.5, skipped
+				{ImagePath: "img3.jpg", StartTime: 6, EndTime: 7.5},   // gap 4.5 from img1, kept
+				{ImagePath: "img4.jpg", StartTime: 8, EndTime: 9.5},   // gap 0.5 from img3, skipped
+				{ImagePath: "img5.jpg", StartTime: 14, EndTime: 15.5}, // gap 6.5 from img3, kept
+			},
+			minGap: 4.0,
+			want:   3, // img1, img3, img5
+		},
+		{
+			name: "allTooClose",
+			overlays: []video.ImageOverlay{
+				{ImagePath: "img1.jpg", StartTime: 0, EndTime: 1.5},
+				{ImagePath: "img2.jpg", StartTime: 2, EndTime: 3.5},
+				{ImagePath: "img3.jpg", StartTime: 4, EndTime: 5.5},
+				{ImagePath: "img4.jpg", StartTime: 6, EndTime: 7.5},
+			},
+			minGap: 4.0,
+			want:   2, // img1, img4 (gap from 1.5 to 6 = 4.5)
+		},
+		{
+			name: "exactMinGap",
+			overlays: []video.ImageOverlay{
+				{ImagePath: "img1.jpg", StartTime: 0, EndTime: 1.5},
+				{ImagePath: "img2.jpg", StartTime: 5.5, EndTime: 7}, // gap exactly 4.0
+			},
+			minGap: 4.0,
+			want:   2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{
+				Visuals: config.VisualsConfig{
+					MinGap: tt.minGap,
+				},
+			}
+			svc := NewService(cfg, nil, nil, nil, nil, nil, nil, nil)
+			pipeline := NewPipeline(svc)
+
+			got := pipeline.enforceImageConstraints(tt.overlays)
+			if len(got) != tt.want {
+				t.Errorf("enforceImageConstraints() returned %d overlays, want %d", len(got), tt.want)
 			}
 		})
 	}

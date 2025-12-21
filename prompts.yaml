@@ -1,7 +1,7 @@
 system:
   default: "You are a creative scriptwriter for short-form viral videos. Generate engaging, high-retention scripts with hooks in the first 3 seconds. Use short punchy sentences."
   conversation: "You are a scriptwriter for viral short-form video conversations. Write engaging dialogue. Output ONLY dialogue lines in 'Speaker: text' format, one per line."
-  visuals: "You are a creative scriptwriter. Always respond with valid JSON only, no markdown or extra text."
+  visuals: "You are a video editor and scriptwriter expert. You understand viewer psychology and know exactly when visual aids maximize engagement. Always respond with valid JSON only, no markdown or extra text."
   title: "You are a YouTube title expert. Generate viral, engaging titles."
 
 script:
@@ -30,43 +30,77 @@ script:
     - ONLY dialogue lines, nothing else
 
   with_visuals: |
-    Generate a {{.ScriptLength}}-second script about {{.Topic}} with visual cues.
+    Generate a {{.ScriptLength}}-second script about {{.Topic}} with strategic visual cues.
+
+    Your task is to write an engaging script AND decide exactly when images should appear to maximize viewer engagement.
+
+    VISUAL PLACEMENT STRATEGY:
+    - Show an image whenever you mention something concrete/visual (person, place, object, animal)
+    - Show an image during surprising facts or "wow moments" to reinforce the point
+    - Show an image when transitioning between topics
+    - Show an image during emotional peaks (funny, shocking, heartwarming moments)
+    - Aim for 4-8 images in a {{.ScriptLength}}-second video (roughly every 5-10 seconds)
+    - Each image should display for 1.5-3 seconds
 
     Requirements:
     1. Write an engaging script with a hook in the first {{.HookDuration}} seconds
     2. Use short punchy sentences
-    3. Suggest images to display at key moments throughout the script
-    4. Each visual should have a simple search query (2-4 words) for Google Image search
+    3. For EACH visual moment, provide:
+       - search_query: specific 2-4 word Google Image search (be specific! "golden retriever puppy" not "dog")
+       - word_index: which word (0-based) triggers the image
+       - duration: how long to show it (1.5-3.0 seconds)
 
     Return ONLY valid JSON in this exact format:
     {
       "script": "Your full script text here without any speaker labels",
       "visuals": [
-        {"search_query": "image search term", "word_index": 5},
-        {"search_query": "another search term", "word_index": 15}
+        {"search_query": "specific image term", "word_index": 3, "duration": 2.0},
+        {"search_query": "another specific term", "word_index": 12, "duration": 1.5}
       ]
     }
 
-    The word_index is which word number (0-based) the image should appear at.
-    Make search queries specific and visual (e.g., "golden gate bridge", "cute puppy", "space nebula").
+    GOOD search queries: "eiffel tower night", "baby elephant playing", "ancient rome colosseum", "astronaut spacewalk"
+    BAD search queries: "thing", "stuff", "concept", "idea"
 
   visuals_only: |
-    Analyze this script and suggest images to display at key moments throughout.
+    Analyze this script and add strategic visual cues to maximize viewer engagement.
 
     Script: {{.Script}}
+
+    VISUAL PLACEMENT STRATEGY - Add an image when:
+    ✓ A specific thing is mentioned (animal, object, place, person)
+    ✓ A key fact or surprising statement needs visual reinforcement
+    ✓ A new topic or subject is introduced
+    ✓ Something visually interesting is described
+
+    TIMING RULES:
+    1. Space images roughly every 4-6 seconds
+    2. Aim for 8-12 images for a typical 40-50 second video
+    3. Each image should display for 2-3 seconds
+    4. The word_index is the word number (0-based) where the image should appear
 
     Return ONLY valid JSON in this exact format:
     {
       "script": "copy the original script here unchanged",
       "visuals": [
-        {"search_query": "image search term", "word_index": 5},
-        {"search_query": "another search term", "word_index": 15}
+        {"search_query": "specific image term", "word_index": 5, "duration": 2.5},
+        {"search_query": "another specific term", "word_index": 18, "duration": 2.5}
       ]
     }
 
-    The word_index is which word number (0-based) the image should appear at.
-    Make search queries specific and visual (e.g., "golden gate bridge", "cute puppy", "space nebula").
-    Choose moments that would benefit from visual reinforcement.
+    Example distribution for ~120 word script (40 seconds):
+    - Image 1: word_index ~5
+    - Image 2: word_index ~15
+    - Image 3: word_index ~25
+    - Image 4: word_index ~35
+    - Image 5: word_index ~50
+    - Image 6: word_index ~65
+    - Image 7: word_index ~80
+    - Image 8: word_index ~95
+    - Image 9: word_index ~110
+
+    GOOD search queries: "mantis shrimp colorful", "vampire squid deep ocean", "barreleye fish transparent"
+    BAD search queries: "amazing", "concept", "idea", "thing", "interesting"
 
 title:
   generate: |

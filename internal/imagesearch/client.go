@@ -7,13 +7,36 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
 const (
 	baseURL        = "https://www.googleapis.com/customsearch/v1"
 	defaultTimeout = 15 * time.Second
+	minImageWidth  = 400
+	minImageHeight = 300
 )
+
+// Domains known to serve placeholder/error images or block downloads
+var blockedDomains = []string{
+	"lookaside.instagram.com",
+	"instagram.com",
+	"fbcdn.net",
+	"pinterest.com",
+	"pinimg.com",
+	"tiktok.com",
+	"twitter.com",
+	"x.com",
+	"shutterstock.com",
+	"gettyimages.com",
+	"alamy.com",
+	"dreamstime.com",
+	"istockphoto.com",
+	"123rf.com",
+	"depositphotos.com",
+	"stock.adobe.com",
+}
 
 type Client struct {
 	apiKey     string
@@ -26,6 +49,8 @@ type SearchResult struct {
 	Title    string
 	ImageURL string
 	ThumbURL string
+	Width    int
+	Height   int
 }
 
 type searchResponse struct {
@@ -40,6 +65,8 @@ type searchItem struct {
 
 type imageInfo struct {
 	ThumbnailLink string `json:"thumbnailLink"`
+	Width         int    `json:"width"`
+	Height        int    `json:"height"`
 }
 
 func NewClient(apiKey, engineID string) *Client {
@@ -54,8 +81,9 @@ func NewClient(apiKey, engineID string) *Client {
 }
 
 func (c *Client) Search(ctx context.Context, query string, count int) ([]SearchResult, error) {
-	if count > 10 {
-		count = 10
+	requestCount := count * 3
+	if requestCount > 10 {
+		requestCount = 10
 	}
 
 	params := url.Values{}
@@ -63,9 +91,9 @@ func (c *Client) Search(ctx context.Context, query string, count int) ([]SearchR
 	params.Set("cx", c.engineID)
 	params.Set("q", query)
 	params.Set("searchType", "image")
-	params.Set("num", fmt.Sprintf("%d", count))
+	params.Set("num", fmt.Sprintf("%d", requestCount))
 	params.Set("safe", "active")
-	params.Set("imgSize", "large")
+	params.Set("imgSize", "xlarge")
 	params.Set("imgType", "photo")
 
 	reqURL := fmt.Sprintf("%s?%s", c.baseURL, params.Encode())
@@ -96,13 +124,41 @@ func (c *Client) Search(ctx context.Context, query string, count int) ([]SearchR
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	results := make([]SearchResult, 0, len(searchResp.Items))
+	results := make([]SearchResult, 0, count)
 	for _, item := range searchResp.Items {
-		results = append(results, SearchResult{
-			Title:    item.Title,
-			ImageURL: item.Link,
-			ThumbURL: item.Image.ThumbnailLink,
-		})
+		if isBlockedDomain(item.Link) {
+			continue
+		}
+		if item.Image.Width >= minImageWidth && item.Image.Height >= minImageHeight {
+			results = append(results, SearchResult{
+				Title:    item.Title,
+				ImageURL: item.Link,
+				ThumbURL: item.Image.ThumbnailLink,
+				Width:    item.Image.Width,
+				Height:   item.Image.Height,
+			})
+			if len(results) >= count {
+				break
+			}
+		}
+	}
+
+	if len(results) == 0 {
+		for _, item := range searchResp.Items {
+			if isBlockedDomain(item.Link) {
+				continue
+			}
+			results = append(results, SearchResult{
+				Title:    item.Title,
+				ImageURL: item.Link,
+				ThumbURL: item.Image.ThumbnailLink,
+				Width:    item.Image.Width,
+				Height:   item.Image.Height,
+			})
+			if len(results) >= count {
+				break
+			}
+		}
 	}
 
 	return results, nil
@@ -125,10 +181,30 @@ func (c *Client) DownloadImage(ctx context.Context, imageURL string) ([]byte, er
 		return nil, fmt.Errorf("failed to download image: %s", resp.Status)
 	}
 
+	contentType := resp.Header.Get("Content-Type")
+	if !isImageContentType(contentType) {
+		return nil, fmt.Errorf("invalid content type: %s", contentType)
+	}
+
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read image data: %w", err)
 	}
 
 	return data, nil
+}
+
+func isBlockedDomain(imageURL string) bool {
+	lowerURL := strings.ToLower(imageURL)
+	for _, domain := range blockedDomains {
+		if strings.Contains(lowerURL, domain) {
+			return true
+		}
+	}
+	return false
+}
+
+func isImageContentType(contentType string) bool {
+	ct := strings.ToLower(contentType)
+	return strings.HasPrefix(ct, "image/")
 }

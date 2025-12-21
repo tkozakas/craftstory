@@ -156,16 +156,25 @@ func TestSearchResultFields(t *testing.T) {
 
 func TestDownloadImage(t *testing.T) {
 	tests := []struct {
-		name       string
-		statusCode int
-		body       []byte
-		wantErr    bool
+		name        string
+		statusCode  int
+		contentType string
+		body        []byte
+		wantErr     bool
 	}{
 		{
-			name:       "success",
-			statusCode: http.StatusOK,
-			body:       []byte{0x89, 0x50, 0x4E, 0x47}, // PNG magic bytes
-			wantErr:    false,
+			name:        "success",
+			statusCode:  http.StatusOK,
+			contentType: "image/png",
+			body:        []byte{0x89, 0x50, 0x4E, 0x47},
+			wantErr:     false,
+		},
+		{
+			name:        "successJpeg",
+			statusCode:  http.StatusOK,
+			contentType: "image/jpeg",
+			body:        []byte{0xFF, 0xD8, 0xFF},
+			wantErr:     false,
 		},
 		{
 			name:       "notFound",
@@ -177,11 +186,21 @@ func TestDownloadImage(t *testing.T) {
 			statusCode: http.StatusInternalServerError,
 			wantErr:    true,
 		},
+		{
+			name:        "invalidContentType",
+			statusCode:  http.StatusOK,
+			contentType: "text/html",
+			body:        []byte("<html>"),
+			wantErr:     true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if tt.contentType != "" {
+					w.Header().Set("Content-Type", tt.contentType)
+				}
 				w.WriteHeader(tt.statusCode)
 				if tt.body != nil {
 					_, _ = w.Write(tt.body)
