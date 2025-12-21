@@ -4,18 +4,18 @@ gemini:
   model: "gemini-2.5-flash"
 
 elevenlabs:
-  voice_id: "JBFqnCBsd6RMkjVDRZzb"
+  voice_id: "oAlEJuW30knHWhA6cF0e"
   model: "eleven_flash_v2_5"
   stability: 0.75
   similarity: 0.75
   voices:
     - name: "Host"
-      id: "JBFqnCBsd6RMkjVDRZzb"
-      stability: 0.75
-      similarity: 0.75
+      id: "oAlEJuW30knHWhA6cF0e"
+      stability: 0.70
+      similarity: 0.80
     - name: "Guest"
-      id: "EXAVITQu4vr4xnSDxMaL"
-      stability: 0.95
+      id: "A4AyGcPAjb1pHgflyZZp"
+      stability: 0.75
       similarity: 0.75
 
 content:
