@@ -96,15 +96,20 @@ func handleSetup() {
 		url := "https://elevenlabs.io/app/settings/api-keys"
 		slog.Info("Get your API key", "url", url)
 		openBrowser(url)
-		fmt.Print("Paste API key here: ")
-		reader := bufio.NewReader(os.Stdin)
-		value, _ := reader.ReadString('\n')
-		value = strings.TrimSpace(value)
-		if value != "" {
-			cmd := exec.Command("gcloud", "secrets", "create", "elevenlabs-api-key", "--data-file=-")
-			cmd.Stdin = strings.NewReader(value)
-			cmd.Run()
-		}
+		promptAndStoreSecret("elevenlabs-api-key", "ElevenLabs API key")
+	}
+
+	if runCmd("gcloud", "secrets", "describe", "google-search-api-key") != nil {
+		slog.Info("Setting up Google Custom Search for image overlays")
+		url := "https://console.cloud.google.com/apis/credentials"
+		slog.Info("Create an API key", "url", url)
+		openBrowser(url)
+		promptAndStoreSecret("google-search-api-key", "Google API key")
+
+		url = "https://programmablesearchengine.google.com/controlpanel/create"
+		slog.Info("Create a Custom Search Engine (enable 'Search the entire web')", "url", url)
+		openBrowser(url)
+		promptAndStoreSecret("google-search-engine-id", "Search Engine ID (cx)")
 	}
 
 	slog.Info("Setup complete! Run: task run -- generate -topic \"your topic\"")
@@ -194,6 +199,19 @@ func runCmdInteractive(name string, args ...string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func promptAndStoreSecret(secretName, prompt string) {
+	fmt.Printf("Paste %s here: ", prompt)
+	reader := bufio.NewReader(os.Stdin)
+	value, _ := reader.ReadString('\n')
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	cmd := exec.Command("gcloud", "secrets", "create", secretName, "--data-file=-")
+	cmd.Stdin = strings.NewReader(value)
+	cmd.Run()
 }
 
 func loadConfigOnly() *config.Config {

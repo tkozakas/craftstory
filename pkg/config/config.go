@@ -7,6 +7,7 @@ import (
 
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
 	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
+	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 )
 
@@ -106,6 +107,8 @@ type VisualsConfig struct {
 }
 
 func Load(ctx context.Context) (*Config, error) {
+	_ = godotenv.Load()
+
 	data, err := os.ReadFile("config.yaml")
 	if err != nil {
 		return nil, fmt.Errorf("read config.yaml: %w", err)
@@ -122,7 +125,6 @@ func Load(ctx context.Context) (*Config, error) {
 
 	cfg.YouTubeTokenPath = envOr("YOUTUBE_TOKEN_PATH", "./youtube_token.json")
 	cfg.GCSBucket = os.Getenv("GCS_BUCKET")
-	cfg.GoogleSearchEngineID = os.Getenv("GOOGLE_SEARCH_ENGINE_ID")
 
 	cfg.loadSecrets(ctx)
 
@@ -139,6 +141,7 @@ func (cfg *Config) loadSecrets(ctx context.Context) {
 		{"youtube-client-id", "YOUTUBE_CLIENT_ID", &cfg.YouTubeClientID},
 		{"youtube-client-secret", "YOUTUBE_CLIENT_SECRET", &cfg.YouTubeClientSecret},
 		{"google-search-api-key", "GOOGLE_SEARCH_API_KEY", &cfg.GoogleSearchAPIKey},
+		{"google-search-engine-id", "GOOGLE_SEARCH_ENGINE_ID", &cfg.GoogleSearchEngineID},
 	}
 
 	var client *secretmanager.Client
