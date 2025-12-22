@@ -1,4 +1,4 @@
-package elevenlabs
+package tts
 
 import (
 	"context"
@@ -11,9 +11,9 @@ import (
 )
 
 func makeTimestampResponse(audio []byte) []byte {
-	resp := timestampResponse{
+	resp := elevenlabsTimestampResponse{
 		AudioBase64: base64.StdEncoding.EncodeToString(audio),
-		Alignment: alignment{
+		Alignment: elevenlabsAlignment{
 			Characters:          []string{"H", "e", "l", "l", "o", " ", "w", "o", "r", "l", "d"},
 			CharacterStartTimes: []float64{0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0},
 			CharacterEndTimes:   []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1},
@@ -83,7 +83,7 @@ func TestGenerateSpeech(t *testing.T) {
 					t.Errorf("expected Content-Type application/json")
 				}
 
-				var req request
+				var req elevenlabsRequest
 				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 					t.Errorf("failed to decode request: %v", err)
 				}
@@ -96,16 +96,15 @@ func TestGenerateSpeech(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := NewClient("test-key", Options{
+			client := NewElevenLabsClient("test-key", ElevenLabsOptions{
 				VoiceID:    "voice-123",
 				Model:      "eleven_turbo_v2",
 				Stability:  0.5,
 				Similarity: 0.75,
 			})
-			client.baseURL = server.URL
+			client.SetBaseURL(server.URL)
 
-			ctx := context.Background()
-			got, err := client.GenerateSpeech(ctx, tt.text)
+			got, err := client.GenerateSpeech(t.Context(), tt.text)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GenerateSpeech() error = %v, wantErr %v", err, tt.wantErr)
@@ -130,17 +129,15 @@ func TestGenerateSpeechWithTimings(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("test-key", Options{
+	client := NewElevenLabsClient("test-key", ElevenLabsOptions{
 		VoiceID:    "voice-123",
 		Model:      "eleven_turbo_v2",
 		Stability:  0.5,
 		Similarity: 0.75,
 	})
-	client.baseURL = server.URL
+	client.SetBaseURL(server.URL)
 
-	ctx := context.Background()
-	result, err := client.GenerateSpeechWithTimings(ctx, "Hello world")
-
+	result, err := client.GenerateSpeechWithTimings(t.Context(), "Hello world")
 	if err != nil {
 		t.Fatalf("GenerateSpeechWithTimings() error = %v", err)
 	}
@@ -165,12 +162,12 @@ func TestGenerateSpeechWithTimings(t *testing.T) {
 func TestExtractWordTimings(t *testing.T) {
 	tests := []struct {
 		name      string
-		alignment alignment
+		alignment elevenlabsAlignment
 		wantWords []string
 	}{
 		{
 			name: "simpleWords",
-			alignment: alignment{
+			alignment: elevenlabsAlignment{
 				Characters:          []string{"H", "i", " ", "t", "h", "e", "r", "e"},
 				CharacterStartTimes: []float64{0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7},
 				CharacterEndTimes:   []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8},
@@ -179,7 +176,7 @@ func TestExtractWordTimings(t *testing.T) {
 		},
 		{
 			name: "multipleSpaces",
-			alignment: alignment{
+			alignment: elevenlabsAlignment{
 				Characters:          []string{"a", " ", " ", "b"},
 				CharacterStartTimes: []float64{0.0, 0.1, 0.2, 0.3},
 				CharacterEndTimes:   []float64{0.1, 0.2, 0.3, 0.4},
@@ -188,7 +185,7 @@ func TestExtractWordTimings(t *testing.T) {
 		},
 		{
 			name: "emptyAlignment",
-			alignment: alignment{
+			alignment: elevenlabsAlignment{
 				Characters:          []string{},
 				CharacterStartTimes: []float64{},
 				CharacterEndTimes:   []float64{},
@@ -216,21 +213,21 @@ func TestExtractWordTimings(t *testing.T) {
 }
 
 func TestVoiceID(t *testing.T) {
-	client := NewClient("key", Options{VoiceID: "voice-abc"})
+	client := NewElevenLabsClient("key", ElevenLabsOptions{VoiceID: "voice-abc"})
 	if got := client.VoiceID(); got != "voice-abc" {
 		t.Errorf("VoiceID() = %q, want %q", got, "voice-abc")
 	}
 }
 
-func TestElevenLabsModel(t *testing.T) {
-	client := NewClient("key", Options{Model: "eleven_multilingual_v2"})
+func TestModel(t *testing.T) {
+	client := NewElevenLabsClient("key", ElevenLabsOptions{Model: "eleven_multilingual_v2"})
 	if got := client.Model(); got != "eleven_multilingual_v2" {
 		t.Errorf("Model() = %q, want %q", got, "eleven_multilingual_v2")
 	}
 }
 
 func TestRequestBody(t *testing.T) {
-	var capturedReq request
+	var capturedReq elevenlabsRequest
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&capturedReq)
@@ -239,16 +236,15 @@ func TestRequestBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("key", Options{
+	client := NewElevenLabsClient("key", ElevenLabsOptions{
 		VoiceID:    "voice-123",
 		Model:      "test-model",
 		Stability:  0.6,
 		Similarity: 0.8,
 	})
-	client.baseURL = server.URL
+	client.SetBaseURL(server.URL)
 
-	ctx := context.Background()
-	_, _ = client.GenerateSpeech(ctx, "Hello")
+	_, _ = client.GenerateSpeech(context.Background(), "Hello")
 
 	if capturedReq.ModelID != "test-model" {
 		t.Errorf("request ModelID = %q, want %q", capturedReq.ModelID, "test-model")
@@ -289,8 +285,8 @@ func TestGenerateSpeechWithVoice(t *testing.T) {
 			text: "Hello",
 			voice: VoiceConfig{
 				ID:         "another-voice",
-				Stability:  0, // Should fallback to client default
-				Similarity: 0, // Should fallback to client default
+				Stability:  0,
+				Similarity: 0,
 			},
 			serverStatus: http.StatusOK,
 			serverBody:   makeTimestampResponse(testAudio),
@@ -332,16 +328,15 @@ func TestGenerateSpeechWithVoice(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := NewClient("test-key", Options{
+			client := NewElevenLabsClient("test-key", ElevenLabsOptions{
 				VoiceID:    "default-voice",
 				Model:      "test-model",
 				Stability:  0.5,
 				Similarity: 0.75,
 			})
-			client.baseURL = server.URL
+			client.SetBaseURL(server.URL)
 
-			ctx := context.Background()
-			result, err := client.GenerateSpeechWithVoice(ctx, tt.text, tt.voice)
+			result, err := client.GenerateSpeechWithVoice(t.Context(), tt.text, tt.voice)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GenerateSpeechWithVoice() error = %v, wantErr %v", err, tt.wantErr)
@@ -363,12 +358,20 @@ func TestGenerateSpeechWithVoice(t *testing.T) {
 func TestVoiceConfigStruct(t *testing.T) {
 	cfg := VoiceConfig{
 		ID:         "voice-123",
+		Name:       "Test Voice",
+		Avatar:     "avatar.png",
 		Stability:  0.7,
 		Similarity: 0.85,
 	}
 
 	if cfg.ID != "voice-123" {
 		t.Errorf("ID = %q, want %q", cfg.ID, "voice-123")
+	}
+	if cfg.Name != "Test Voice" {
+		t.Errorf("Name = %q, want %q", cfg.Name, "Test Voice")
+	}
+	if cfg.Avatar != "avatar.png" {
+		t.Errorf("Avatar = %q, want %q", cfg.Avatar, "avatar.png")
 	}
 	if cfg.Stability != 0.7 {
 		t.Errorf("Stability = %v, want %v", cfg.Stability, 0.7)
@@ -409,5 +412,27 @@ func TestSpeechResultStruct(t *testing.T) {
 	}
 	if len(result.Timings) != 1 {
 		t.Errorf("Timings length = %d, want 1", len(result.Timings))
+	}
+}
+
+func TestDefaultSpeed(t *testing.T) {
+	client := NewElevenLabsClient("key", ElevenLabsOptions{
+		VoiceID: "voice-123",
+		Speed:   0, // Should default to 1.0
+	})
+
+	if client.speed != 1.0 {
+		t.Errorf("default speed = %v, want 1.0", client.speed)
+	}
+}
+
+func TestCustomSpeed(t *testing.T) {
+	client := NewElevenLabsClient("key", ElevenLabsOptions{
+		VoiceID: "voice-123",
+		Speed:   1.5,
+	})
+
+	if client.speed != 1.5 {
+		t.Errorf("speed = %v, want 1.5", client.speed)
 	}
 }

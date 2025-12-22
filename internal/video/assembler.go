@@ -227,8 +227,8 @@ func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, 
 	lastOutput := "base"
 	inputOffset := a.getInputOffset(musicPath)
 
-	avatarSize := a.width / 5
-	bottomMargin := 200
+	avatarSize := a.width * 2 / 5
+	bottomMargin := 280
 
 	for i, charOverlay := range charOverlays {
 		inputIdx := inputOffset + i
@@ -318,9 +318,14 @@ func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTi
 		"-map", "[v]",
 		"-map", "[a]",
 		"-c:v", "libx264",
+		"-crf", "28",
+		"-maxrate", "4M",
+		"-bufsize", "8M",
 		"-c:a", "aac",
+		"-b:a", "128k",
 		"-ar", "44100",
 		"-preset", "fast",
+		"-movflags", "+faststart",
 		outputPath,
 	)
 

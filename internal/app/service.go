@@ -5,9 +5,11 @@ import (
 	"craftstory/internal/llm"
 	"craftstory/internal/reddit"
 	"craftstory/internal/storage"
+	"craftstory/internal/telegram"
 	"craftstory/internal/tts"
 	"craftstory/internal/uploader"
 	"craftstory/internal/video"
+	"craftstory/internal/visuals"
 	"craftstory/pkg/config"
 )
 
@@ -20,6 +22,8 @@ type Service struct {
 	storage     *storage.LocalStorage
 	reddit      *reddit.Client
 	imageSearch *imagesearch.Client
+	fetcher     *visuals.Fetcher
+	approval    *telegram.ApprovalService
 }
 
 func NewService(
@@ -31,7 +35,19 @@ func NewService(
 	storage *storage.LocalStorage,
 	reddit *reddit.Client,
 	imageSearch *imagesearch.Client,
+	approval *telegram.ApprovalService,
 ) *Service {
+	var fetcher *visuals.Fetcher
+	if imageSearch != nil {
+		fetcher = visuals.NewFetcher(imageSearch, llmClient, visuals.Config{
+			Enabled:     cfg.Visuals.Enabled,
+			DisplayTime: cfg.Visuals.DisplayTime,
+			ImageWidth:  cfg.Visuals.ImageWidth,
+			ImageHeight: cfg.Visuals.ImageHeight,
+			MinGap:      cfg.Visuals.MinGap,
+		})
+	}
+
 	return &Service{
 		cfg:         cfg,
 		llm:         llmClient,
@@ -41,6 +57,8 @@ func NewService(
 		storage:     storage,
 		reddit:      reddit,
 		imageSearch: imageSearch,
+		fetcher:     fetcher,
+		approval:    approval,
 	}
 }
 
@@ -74,4 +92,12 @@ func (s *Service) Reddit() *reddit.Client {
 
 func (s *Service) ImageSearch() *imagesearch.Client {
 	return s.imageSearch
+}
+
+func (s *Service) Fetcher() *visuals.Fetcher {
+	return s.fetcher
+}
+
+func (s *Service) Approval() *telegram.ApprovalService {
+	return s.approval
 }

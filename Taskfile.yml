@@ -1,6 +1,10 @@
 version: "3"
 
 tasks:
+  default:
+    cmds:
+      - task: check
+
   run:
     cmds:
       - go run ./cmd/craftstory {{.CLI_ARGS}}
@@ -17,7 +21,14 @@ tasks:
     cmds:
       - golangci-lint run
 
+  fmt:
+    cmds:
+      - go fmt ./...
+      - go mod tidy
+
   check:
     cmds:
+      - go fmt ./...
+      - go mod tidy
       - golangci-lint run
       - go test -race ./...

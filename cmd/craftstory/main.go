@@ -12,14 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
-
 	"craftstory/internal/app"
-	"craftstory/internal/elevenlabs"
 	"craftstory/internal/gemini"
 	"craftstory/internal/imagesearch"
 	"craftstory/internal/reddit"
 	"craftstory/internal/storage"
+	"craftstory/internal/telegram"
 	"craftstory/internal/tts"
 	"craftstory/internal/uploader"
 	"craftstory/internal/video"
@@ -40,6 +38,10 @@ func main() {
 		handleSetup()
 	case "generate":
 		handleGenerate()
+	case "reddit":
+		handleReddit()
+	case "review":
+		handleReview()
 	case "upload":
 		handleUpload()
 	case "auth":
@@ -60,13 +62,13 @@ func handleSetup() {
 
 	if err := runCmd("gcloud", "auth", "print-access-token"); err != nil {
 		slog.Info("Authenticating with Google Cloud")
-		runCmdInteractive("gcloud", "auth", "login")
-		runCmdInteractive("gcloud", "auth", "application-default", "login")
+		_ = runCmdInteractive("gcloud", "auth", "login")
+		_ = runCmdInteractive("gcloud", "auth", "application-default", "login")
 	}
 
 	project := selectProject()
 	updateConfigProject(project)
-	runCmd("gcloud", "config", "set", "project", project)
+	_ = runCmd("gcloud", "config", "set", "project", project)
 
 	slog.Info("Checking billing")
 	for {
@@ -78,7 +80,7 @@ func handleSetup() {
 		slog.Warn("Billing not enabled", "url", url)
 		openBrowser(url)
 		fmt.Print("Press Enter after enabling billing...")
-		bufio.NewReader(os.Stdin).ReadBytes('\n')
+		_, _ = bufio.NewReader(os.Stdin).ReadBytes('\n')
 	}
 
 	slog.Info("Enabling APIs")
@@ -89,7 +91,7 @@ func handleSetup() {
 		"customsearch.googleapis.com",
 	}
 	for _, api := range apis {
-		runCmdInteractive("gcloud", "services", "enable", api)
+		_ = runCmdInteractive("gcloud", "services", "enable", api)
 	}
 
 	if runCmd("gcloud", "secrets", "describe", "elevenlabs-api-key") != nil {
@@ -140,7 +142,7 @@ func selectProject() string {
 	input = strings.TrimSpace(input)
 
 	var idx int
-	fmt.Sscanf(input, "%d", &idx)
+	_, _ = fmt.Sscanf(input, "%d", &idx)
 	if idx < 1 || idx > len(projects) {
 		idx = 1
 	}
@@ -163,7 +165,7 @@ func updateConfigProject(project string) {
 		}
 	}
 
-	os.WriteFile("config.yaml", []byte(strings.Join(lines, "\n")), 0644)
+	_ = os.WriteFile("config.yaml", []byte(strings.Join(lines, "\n")), 0644)
 	slog.Info("Updated config.yaml", "project", project)
 }
 
@@ -178,7 +180,7 @@ func openBrowser(url string) {
 		slog.Info("Open URL", "url", url)
 		return
 	}
-	cmd.Start()
+	_ = cmd.Start()
 }
 
 func commandExists(name string) bool {
@@ -211,21 +213,7 @@ func promptAndStoreSecret(secretName, prompt string) {
 	}
 	cmd := exec.Command("gcloud", "secrets", "create", secretName, "--data-file=-")
 	cmd.Stdin = strings.NewReader(value)
-	cmd.Run()
-}
-
-func loadConfigOnly() *config.Config {
-	data, err := os.ReadFile("config.yaml")
-	if err != nil {
-		slog.Error("Failed to read config.yaml", "error", err)
-		os.Exit(1)
-	}
-	cfg := &config.Config{}
-	if err := yaml.Unmarshal(data, cfg); err != nil {
-		slog.Error("Failed to parse config.yaml", "error", err)
-		os.Exit(1)
-	}
-	return cfg
+	_ = cmd.Run()
 }
 
 func loadConfig() *config.Config {
@@ -242,7 +230,6 @@ func handleGenerate() {
 	cfg := loadConfig()
 	cmd := flag.NewFlagSet("generate", flag.ExitOnError)
 	topic := cmd.String("topic", "", "Topic for the video script (required)")
-	upload := cmd.Bool("upload", false, "Upload to YouTube after generation")
 
 	if err := cmd.Parse(os.Args[2:]); err != nil {
 		slog.Error("Failed to parse flags", "error", err)
@@ -256,28 +243,170 @@ func handleGenerate() {
 
 	svc := initService(cfg)
 	pipeline := app.NewPipeline(svc)
-
 	ctx := context.Background()
 
-	if *upload {
-		resp, err := pipeline.GenerateAndUpload(ctx, *topic)
-		if err != nil {
-			slog.Error("Failed to generate and upload video", "error", err)
-			os.Exit(1)
-		}
-		slog.Info("Video uploaded", "url", resp.URL)
-	} else {
-		result, err := pipeline.Generate(ctx, *topic)
-		if err != nil {
-			slog.Error("Failed to generate video", "error", err)
-			os.Exit(1)
-		}
-		slog.Info("Video generated",
-			"title", result.Title,
-			"output", result.OutputDir,
-			"video", result.VideoPath,
-			"duration", result.Duration)
+	result, err := pipeline.Generate(ctx, *topic)
+	if err != nil {
+		slog.Error("Failed to generate video", "error", err)
+		os.Exit(1)
 	}
+
+	slog.Info("Video generated",
+		"title", result.Title,
+		"video", result.VideoPath,
+		"duration", fmt.Sprintf("%.1fs", result.Duration))
+
+	if svc.Approval() != nil {
+		err := svc.Approval().QueueVideo(telegram.QueuedVideo{
+			VideoPath: result.VideoPath,
+			Title:     result.Title,
+			Script:    result.ScriptContent,
+			Topic:     *topic,
+		})
+		if err != nil {
+			slog.Error("Failed to queue video", "error", err)
+			os.Exit(1)
+		}
+		slog.Info("Video queued for review. Use /review in Telegram or run 'craftstory review' to process.")
+		return
+	}
+
+	if !requestConsoleApproval(result.VideoPath) {
+		slog.Info("Upload cancelled")
+		return
+	}
+
+	uploadVideo(svc, pipeline, ctx, result, *topic)
+}
+
+func handleReddit() {
+	cfg := loadConfig()
+	svc := initService(cfg)
+	pipeline := app.NewPipeline(svc)
+	ctx := context.Background()
+
+	result, err := pipeline.GenerateFromReddit(ctx)
+	if err != nil {
+		slog.Error("Failed to generate video from Reddit", "error", err)
+		os.Exit(1)
+	}
+
+	slog.Info("Video generated",
+		"title", result.Title,
+		"video", result.VideoPath,
+		"duration", fmt.Sprintf("%.1fs", result.Duration))
+
+	if svc.Approval() != nil {
+		err := svc.Approval().QueueVideo(telegram.QueuedVideo{
+			VideoPath: result.VideoPath,
+			Title:     result.Title,
+			Script:    result.ScriptContent,
+			Topic:     "reddit",
+		})
+		if err != nil {
+			slog.Error("Failed to queue video", "error", err)
+			os.Exit(1)
+		}
+		slog.Info("Video queued for review.")
+		return
+	}
+
+	if !requestConsoleApproval(result.VideoPath) {
+		slog.Info("Upload cancelled")
+		return
+	}
+
+	uploadVideo(svc, pipeline, ctx, result, "reddit")
+}
+
+func handleReview() {
+	cfg := loadConfig()
+	svc := initService(cfg)
+	pipeline := app.NewPipeline(svc)
+	ctx := context.Background()
+
+	if svc.Approval() == nil {
+		slog.Error("Telegram not configured")
+		os.Exit(1)
+	}
+
+	slog.Info("Waiting for review decision via Telegram...")
+	slog.Info("Send /review in Telegram to get the next video")
+
+	result, video, err := svc.Approval().WaitForResult(ctx)
+	if err != nil {
+		slog.Error("Failed to get review result", "error", err)
+		os.Exit(1)
+	}
+
+	if !result.Approved {
+		slog.Info("Video rejected", "title", video.Title)
+		return
+	}
+
+	slog.Info("Video approved, uploading...", "title", video.Title)
+	uploadVideoFromQueue(svc, pipeline, ctx, video)
+}
+
+func uploadVideo(svc *app.Service, pipeline *app.Pipeline, ctx context.Context, result *app.GenerateResult, topic string) {
+	slog.Info("Uploading to YouTube...")
+	resp, err := pipeline.Upload(ctx, app.UploadRequest{
+		VideoPath:   result.VideoPath,
+		Title:       result.Title + " #shorts",
+		Description: fmt.Sprintf("A short video about %s\n\n#shorts #facts", topic),
+	})
+	if err != nil {
+		slog.Error("Failed to upload video", "error", err)
+		if svc.Approval() != nil {
+			svc.Approval().NotifyUploadFailed(result.Title, err)
+		}
+		os.Exit(1)
+	}
+
+	slog.Info("Video uploaded", "url", resp.URL)
+	if svc.Approval() != nil {
+		svc.Approval().NotifyUploadComplete(result.Title, resp.URL)
+	}
+}
+
+func uploadVideoFromQueue(svc *app.Service, pipeline *app.Pipeline, ctx context.Context, video *telegram.QueuedVideo) {
+	slog.Info("Uploading to YouTube...")
+	resp, err := pipeline.Upload(ctx, app.UploadRequest{
+		VideoPath:   video.VideoPath,
+		Title:       video.Title + " #shorts",
+		Description: fmt.Sprintf("A short video about %s\n\n#shorts #facts", video.Topic),
+	})
+	if err != nil {
+		slog.Error("Failed to upload video", "error", err)
+		svc.Approval().NotifyUploadFailed(video.Title, err)
+		os.Exit(1)
+	}
+
+	slog.Info("Video uploaded", "url", resp.URL)
+	svc.Approval().NotifyUploadComplete(video.Title, resp.URL)
+}
+
+func requestConsoleApproval(videoPath string) bool {
+	openFile(videoPath)
+	fmt.Print("\nUpload to YouTube? [y/N]: ")
+	reader := bufio.NewReader(os.Stdin)
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(strings.ToLower(input))
+	return input == "y" || input == "yes"
+}
+
+func openFile(path string) {
+	var cmd *exec.Cmd
+	switch {
+	case commandExists("xdg-open"):
+		cmd = exec.Command("xdg-open", path)
+	case commandExists("open"):
+		cmd = exec.Command("open", path)
+	default:
+		slog.Info("Open video to review", "path", path)
+		return
+	}
+	_ = cmd.Start()
 }
 
 func handleUpload() {
@@ -362,12 +491,21 @@ func initService(cfg *config.Config) *app.Service {
 		os.Exit(1)
 	}
 
-	ttsProvider := tts.NewElevenLabsAdapter(elevenlabs.NewClient(cfg.ElevenLabsAPIKey, elevenlabs.Options{
+	var ttsService tts.Provider = tts.NewElevenLabsClient(cfg.ElevenLabsAPIKey, tts.ElevenLabsOptions{
 		VoiceID:    cfg.ElevenLabs.VoiceID,
 		Model:      cfg.ElevenLabs.Model,
 		Stability:  cfg.ElevenLabs.Stability,
 		Similarity: cfg.ElevenLabs.Similarity,
-	}))
+	})
+
+	if cfg.FishAudio.Enabled && cfg.FishAudioAPIKey != "" {
+		ttsService = tts.NewFishAudioClient(cfg.FishAudioAPIKey, tts.FishAudioOptions{
+			VoiceID: cfg.FishAudio.VoiceID,
+		})
+		slog.Info("Using Fish Audio TTS")
+	} else {
+		slog.Info("Using ElevenLabs TTS")
+	}
 
 	ytAuth := uploader.NewYouTubeAuth(cfg.YouTubeClientID, cfg.YouTubeClientSecret, cfg.YouTubeTokenPath)
 	ytUploader := uploader.NewYouTubeUploader(ytAuth)
@@ -416,20 +554,31 @@ func initService(cfg *config.Config) *app.Service {
 		slog.Info("Image search enabled")
 	}
 
-	return app.NewService(cfg, llmClient, ttsProvider, ytUploader, assembler, localStorage, redditClient, imgSearchClient)
+	var approvalService *telegram.ApprovalService
+	if cfg.TelegramBotToken != "" {
+		client := telegram.NewClient(cfg.TelegramBotToken)
+		approvalService = telegram.NewApprovalService(client, cfg.Video.OutputDir, cfg.Telegram.DefaultChatID)
+		approvalService.StartBot()
+		slog.Info("Telegram bot started")
+	}
+
+	return app.NewService(cfg, llmClient, ttsService, ytUploader, assembler, localStorage, redditClient, imgSearchClient, approvalService)
 }
 
 func printUsage() {
 	fmt.Println(`Usage: craftstory <command>
 
 Commands:
-  setup     Setup GCP project and authenticate
-  generate  Generate a video from a topic
-  upload    Upload a video to YouTube
-  auth      Authenticate with YouTube
+  setup        Setup GCP project and authenticate
+  generate     Generate a video from a topic
+  reddit       Generate a video from a random Reddit CS thread
+  review       Wait for Telegram review and upload approved videos
+  upload       Upload a video to YouTube directly
+  auth         Authenticate with YouTube
 
 Examples:
   craftstory setup
   craftstory generate -topic "weird history fact"
-  craftstory generate -topic "space theory" -upload`)
+  craftstory reddit
+  craftstory review`)
 }

@@ -1,12 +1,22 @@
 system:
-  default: "You are a creative scriptwriter for short-form viral videos. Generate engaging, high-retention scripts with hooks in the first 3 seconds. Use short punchy sentences."
-  conversation: "You are a scriptwriter for viral short-form video conversations. Write engaging dialogue. Output ONLY dialogue lines in 'Speaker: text' format, one per line."
-  visuals: "You are a video editor and scriptwriter expert. You understand viewer psychology and know exactly when visual aids maximize engagement. Always respond with valid JSON only, no markdown or extra text."
-  title: "You are a YouTube title expert. Generate viral, engaging titles."
+  default: "You are a creative scriptwriter for short-form viral videos about computer science and technology. Generate engaging, high-retention scripts with hooks in the first 3 seconds. Use short punchy sentences. Make complex topics accessible and fun."
+  conversation: |
+    You are a scriptwriter for viral short-form video conversations about computer science.
+    The Host explains fascinating CS topics while the Guest reacts with amazement, asks naive questions, or makes funny observations.
+    Output ONLY dialogue lines in 'Speaker: text' format, one per line.
+
+  conversation_reddit: |
+    You are a scriptwriter creating a viral short-form video conversation based on a real Reddit discussion.
+    The Host explains the key insights from the thread while the Guest reacts with amazement and asks clarifying questions.
+    Extract the most interesting, surprising, or educational points from the Reddit thread.
+    Output ONLY dialogue lines in 'Speaker: text' format, one per line.
+  visuals: "You are a video editor and scriptwriter expert for tech content. You understand viewer psychology and know exactly when visual aids maximize engagement. Always respond with valid JSON only, no markdown or extra text."
+  title: "You are a YouTube title expert for tech content. Generate viral, engaging titles that make CS topics sound mind-blowing."
 
 script:
   single: |
     Generate a {{.ScriptLength}}-second script about {{.Topic}}.
+    Focus on fascinating computer science concepts, algorithms, or tech history.
     Use high-retention language, short sentences, and a hook in the first {{.HookDuration}} seconds.
     Do not include stage directions or speaker labels. Just the spoken text.
 
@@ -15,27 +25,40 @@ script:
 
     Speakers: {{.SpeakerList}}
 
-    IMPORTANT FORMAT RULES:
-    - Each line MUST start with the speaker name followed by a colon
-    - Example format:
-      {{.FirstSpeaker}}: First line of dialogue here.
-      {{.LastSpeaker}}: Response dialogue here.
+    CONVERSATION DYNAMIC:
+    - {{.FirstSpeaker}} is the smart host who explains the topic with enthusiasm
+    - {{.LastSpeaker}} is DUMB but lovable. He:
+      * Misunderstands things hilariously ("So the computer is just guessing? Like me on tests!")
+      * Makes dumb jokes ("Binary? Is that like... two naries?")
+      * Gets confused in funny ways ("Wait, so the internet is just tubes?!")
+      * Says random dumb observations ("My brain hurts. I only have one brain cell.")
+    - Make it FUNNY! {{.LastSpeaker}} should make viewers laugh with his stupidity
+    
+    {{.FirstSpeaker}} does 70% of explaining, {{.LastSpeaker}} interrupts with dumb gold.
 
-    Requirements:
-    - Hook the viewer in the first {{.HookDuration}} seconds with something surprising or intriguing
-    - Use short, punchy sentences (max 15 words per line)
-    - Natural back-and-forth between speakers
-    - High energy and entertaining
-    - NO stage directions, actions, or descriptions in parentheses
-    - ONLY dialogue lines, nothing else
+    FORMAT RULES:
+    - Each line: SpeakerName: dialogue
+    - MAXIMUM 10-12 dialogue exchanges total
+    - {{.FirstSpeaker}}'s lines: 8-15 words each
+    - {{.LastSpeaker}}'s lines: short dumb reactions OR dumb jokes (2-10 words)
+    - NO asterisks, NO italics, NO bold, NO parentheses, NO stage directions
+    - Hook in first {{.HookDuration}} seconds with something mind-blowing
+    - Write numbers as words (say "two" not "2")
+
+    Example {{.LastSpeaker}} lines:
+    - "Wait, so computers are just rocks we tricked into thinking?"
+    - "My last brain cell just left the chat."
+    - "Is that like when I forget where I put my pants?"
+    - "Ooh, big words! I know some of those!"
 
   with_visuals: |
     Generate a {{.ScriptLength}}-second script about {{.Topic}}.
+    Focus on computer science, programming, algorithms, or tech history.
 
     Requirements:
     1. Hook in the first {{.HookDuration}} seconds
     2. Short punchy sentences
-    3. For each concrete noun, place, person, or animal, note it for visuals
+    3. For each concrete noun, place, person, or concept, note it for visuals
 
     Return ONLY valid JSON:
     {
@@ -47,7 +70,7 @@ script:
     }
 
   visuals_only: |
-    Extract visual opportunities from this script. Identify concrete nouns, places, people, animals, or key facts that would benefit from an image.
+    Extract visual opportunities from this script. Identify concrete nouns, tech concepts, people, diagrams, or key facts that would benefit from an image.
 
     Script: {{.Script}}
 
@@ -61,12 +84,51 @@ script:
       {"keyword": "another word", "search_query": "descriptive search term"}
     ]
 
-    GOOD: {"keyword": "octopus", "search_query": "blue ringed octopus"}
+    GOOD: {"keyword": "binary tree", "search_query": "binary tree diagram"}
     BAD: {"keyword": "amazing", "search_query": "cool thing"}
+
+  reddit_conversation: |
+    Generate a {{.ScriptLength}}-second conversational script based on this Reddit thread.
+
+    REDDIT THREAD:
+    Title: {{.RedditTitle}}
+    Post: {{.RedditPost}}
+    
+    Top Comments:
+    {{.RedditComments}}
+
+    Speakers: {{.SpeakerList}}
+
+    CONVERSATION DYNAMIC:
+    - {{.FirstSpeaker}} is the smart host who explains the topic with enthusiasm
+    - {{.LastSpeaker}} is DUMB but lovable. He:
+      * Misunderstands things hilariously ("So the computer is just guessing? Like me on tests!")
+      * Makes dumb jokes ("Binary? Is that like... two naries?")
+      * Gets confused in funny ways ("Wait, so the internet is just tubes?!")
+      * Says random dumb observations ("My brain hurts. I only have one brain cell.")
+    - Make it FUNNY! {{.LastSpeaker}} should make viewers laugh with his stupidity
+    
+    {{.FirstSpeaker}} does 70% of explaining, {{.LastSpeaker}} interrupts with dumb gold.
+
+    FORMAT RULES:
+    - Each line: SpeakerName: dialogue
+    - MAXIMUM 10-12 dialogue exchanges total
+    - {{.FirstSpeaker}}'s lines: 8-15 words each
+    - {{.LastSpeaker}}'s lines: short dumb reactions OR dumb jokes (2-10 words)
+    - NO asterisks, NO italics, NO bold, NO parentheses, NO stage directions
+    - Hook in first {{.HookDuration}} seconds with something mind-blowing
+    - Write numbers as words (say "two" not "2")
+
+    Example {{.LastSpeaker}} lines:
+    - "Wait, so computers are just rocks we tricked into thinking?"
+    - "My last brain cell just left the chat."
+    - "Is that like when I forget where I put my pants?"
+    - "Ooh, big words! I know some of those!"
 
 title:
   generate: |
-    Generate a catchy, clickbait YouTube Shorts title for this script.
+    Generate a catchy, clickbait YouTube Shorts title for this computer science script.
     Max 60 characters. No quotes. No hashtags. Just the title.
+    Make it sound mind-blowing and accessible to non-programmers.
 
     Script: {{.Script}}

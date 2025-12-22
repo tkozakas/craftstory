@@ -91,7 +91,7 @@ func (c *Client) incrementUsage() {
 	}
 	count++
 
-	os.WriteFile(c.usageFile, []byte(fmt.Sprintf("%s:%d", today, count)), 0644)
+	_ = os.WriteFile(c.usageFile, []byte(fmt.Sprintf("%s:%d", today, count)), 0644)
 }
 
 func (c *Client) readUsage() (string, int) {
@@ -132,6 +132,23 @@ func (c *Client) GenerateConversation(ctx context.Context, topic string, speaker
 		return "", fmt.Errorf("render prompt: %w", err)
 	}
 	return c.generate(ctx, c.prompts.System.Conversation, prompt)
+}
+
+func (c *Client) GenerateRedditConversation(ctx context.Context, thread llm.RedditThread, speakers []string, scriptLength, hookDuration int) (string, error) {
+	prompt, err := c.prompts.RenderRedditConversation(prompts.RedditConversationParams{
+		RedditTitle:    thread.Title,
+		RedditPost:     thread.Post,
+		RedditComments: strings.Join(thread.Comments, "\n\n"),
+		ScriptLength:   scriptLength,
+		HookDuration:   hookDuration,
+		SpeakerList:    strings.Join(speakers, ", "),
+		FirstSpeaker:   speakers[0],
+		LastSpeaker:    speakers[len(speakers)-1],
+	})
+	if err != nil {
+		return "", fmt.Errorf("render prompt: %w", err)
+	}
+	return c.generate(ctx, c.prompts.System.ConversationReddit, prompt)
 }
 
 func (c *Client) GenerateScriptWithVisuals(ctx context.Context, topic string, scriptLength, hookDuration int) (*llm.ScriptWithVisuals, error) {

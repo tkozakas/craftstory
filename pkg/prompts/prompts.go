@@ -18,17 +18,19 @@ type Prompts struct {
 }
 
 type SystemPrompts struct {
-	Default      string `yaml:"default"`
-	Conversation string `yaml:"conversation"`
-	Visuals      string `yaml:"visuals"`
-	Title        string `yaml:"title"`
+	Default            string `yaml:"default"`
+	Conversation       string `yaml:"conversation"`
+	ConversationReddit string `yaml:"conversation_reddit"`
+	Visuals            string `yaml:"visuals"`
+	Title              string `yaml:"title"`
 }
 
 type ScriptPrompts struct {
-	Single       string `yaml:"single"`
-	Conversation string `yaml:"conversation"`
-	WithVisuals  string `yaml:"with_visuals"`
-	VisualsOnly  string `yaml:"visuals_only"`
+	Single             string `yaml:"single"`
+	Conversation       string `yaml:"conversation"`
+	RedditConversation string `yaml:"reddit_conversation"`
+	WithVisuals        string `yaml:"with_visuals"`
+	VisualsOnly        string `yaml:"visuals_only"`
 }
 
 type TitlePrompts struct {
@@ -48,6 +50,17 @@ type ConversationParams struct {
 	SpeakerList  string
 	FirstSpeaker string
 	LastSpeaker  string
+}
+
+type RedditConversationParams struct {
+	RedditTitle    string
+	RedditPost     string
+	RedditComments string
+	ScriptLength   int
+	HookDuration   int
+	SpeakerList    string
+	FirstSpeaker   string
+	LastSpeaker    string
 }
 
 type VisualsParams struct {
@@ -88,6 +101,10 @@ func (p *Prompts) RenderScript(params ScriptParams) (string, error) {
 
 func (p *Prompts) RenderConversation(params ConversationParams) (string, error) {
 	return render(p.Script.Conversation, params)
+}
+
+func (p *Prompts) RenderRedditConversation(params RedditConversationParams) (string, error) {
+	return render(p.Script.RedditConversation, params)
 }
 
 func (p *Prompts) RenderVisuals(params VisualsParams) (string, error) {

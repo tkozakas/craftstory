@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
 	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
@@ -13,15 +14,18 @@ import (
 
 type Config struct {
 	ElevenLabsAPIKey     string
+	FishAudioAPIKey      string
 	YouTubeClientID      string
 	YouTubeClientSecret  string
 	YouTubeTokenPath     string
 	GCSBucket            string
 	GoogleSearchAPIKey   string
 	GoogleSearchEngineID string
+	TelegramBotToken     string
 
 	Gemini     GeminiConfig     `yaml:"gemini"`
 	ElevenLabs ElevenLabsConfig `yaml:"elevenlabs"`
+	FishAudio  FishAudioConfig  `yaml:"fishaudio"`
 	Content    ContentConfig    `yaml:"content"`
 	Video      VideoConfig      `yaml:"video"`
 	Music      MusicConfig      `yaml:"music"`
@@ -29,6 +33,11 @@ type Config struct {
 	YouTube    YouTubeConfig    `yaml:"youtube"`
 	GCS        GCSConfig        `yaml:"gcs"`
 	Visuals    VisualsConfig    `yaml:"visuals"`
+	Characters CharactersConfig `yaml:"characters"`
+	Reddit     RedditConfig     `yaml:"reddit"`
+	Telegram   TelegramConfig   `yaml:"telegram"`
+
+	LoadedCharacters []Character
 }
 
 type GeminiConfig struct {
@@ -51,6 +60,27 @@ type Voice struct {
 	Stability  float64 `yaml:"stability"`
 	Similarity float64 `yaml:"similarity"`
 	Avatar     string  `yaml:"avatar"`
+}
+
+type FishAudioConfig struct {
+	Enabled bool    `yaml:"enabled"`
+	VoiceID string  `yaml:"voice_id"`
+	Voices  []Voice `yaml:"voices"`
+}
+
+type CharactersConfig struct {
+	Dir   string `yaml:"dir"`
+	Host  string `yaml:"host"`
+	Guest string `yaml:"guest"`
+}
+
+type Character struct {
+	Name          string `yaml:"name"`
+	Role          string `yaml:"role"`
+	VoiceID       string `yaml:"voice_id"`
+	Image         string `yaml:"image"`
+	SubtitleColor string `yaml:"subtitle_color"`
+	ImagePath     string
 }
 
 type ContentConfig struct {
@@ -106,6 +136,17 @@ type VisualsConfig struct {
 	MinGap      float64 `yaml:"min_gap"`
 }
 
+type RedditConfig struct {
+	Subreddits   []string `yaml:"subreddits"`
+	Sort         string   `yaml:"sort"`
+	PostLimit    int      `yaml:"post_limit"`
+	CommentLimit int      `yaml:"comment_limit"`
+}
+
+type TelegramConfig struct {
+	DefaultChatID int64 `yaml:"default_chat_id"`
+}
+
 func Load(ctx context.Context) (*Config, error) {
 	_ = godotenv.Load()
 
@@ -127,8 +168,81 @@ func Load(ctx context.Context) (*Config, error) {
 	cfg.GCSBucket = os.Getenv("GCS_BUCKET")
 
 	cfg.loadSecrets(ctx)
+	cfg.loadCharacters()
 
 	return cfg, nil
+}
+
+func (cfg *Config) loadCharacters() {
+	dir := cfg.Characters.Dir
+	if dir == "" {
+		dir = "./assets/characters"
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		charFile := filepath.Join(dir, entry.Name(), "character.yaml")
+		data, err := os.ReadFile(charFile)
+		if err != nil {
+			continue
+		}
+
+		var char Character
+		if err := yaml.Unmarshal(data, &char); err != nil {
+			continue
+		}
+
+		if char.Image != "" {
+			char.ImagePath = filepath.Join(dir, entry.Name(), char.Image)
+		}
+
+		cfg.LoadedCharacters = append(cfg.LoadedCharacters, char)
+	}
+}
+
+func (cfg *Config) GetCharacter(name string) *Character {
+	for i := range cfg.LoadedCharacters {
+		if cfg.LoadedCharacters[i].Name == name {
+			return &cfg.LoadedCharacters[i]
+		}
+	}
+	return nil
+}
+
+func (cfg *Config) GetHost() *Character {
+	if cfg.Characters.Host != "" {
+		if char := cfg.GetCharacter(cfg.Characters.Host); char != nil {
+			return char
+		}
+	}
+	for i := range cfg.LoadedCharacters {
+		if cfg.LoadedCharacters[i].Role == "host" {
+			return &cfg.LoadedCharacters[i]
+		}
+	}
+	return nil
+}
+
+func (cfg *Config) GetGuest() *Character {
+	if cfg.Characters.Guest != "" {
+		if char := cfg.GetCharacter(cfg.Characters.Guest); char != nil {
+			return char
+		}
+	}
+	for i := range cfg.LoadedCharacters {
+		if cfg.LoadedCharacters[i].Role == "guest" {
+			return &cfg.LoadedCharacters[i]
+		}
+	}
+	return nil
 }
 
 func (cfg *Config) loadSecrets(ctx context.Context) {
@@ -138,10 +252,12 @@ func (cfg *Config) loadSecrets(ctx context.Context) {
 		dest       *string
 	}{
 		{"elevenlabs-api-key", "ELEVENLABS_API_KEY", &cfg.ElevenLabsAPIKey},
+		{"fishaudio-api-key", "FISHAUDIO_API_KEY", &cfg.FishAudioAPIKey},
 		{"youtube-client-id", "YOUTUBE_CLIENT_ID", &cfg.YouTubeClientID},
 		{"youtube-client-secret", "YOUTUBE_CLIENT_SECRET", &cfg.YouTubeClientSecret},
 		{"google-search-api-key", "GOOGLE_SEARCH_API_KEY", &cfg.GoogleSearchAPIKey},
 		{"google-search-engine-id", "GOOGLE_SEARCH_ENGINE_ID", &cfg.GoogleSearchEngineID},
+		{"telegram-bot-token", "TELEGRAM_BOT_TOKEN", &cfg.TelegramBotToken},
 	}
 
 	var client *secretmanager.Client
@@ -149,7 +265,7 @@ func (cfg *Config) loadSecrets(ctx context.Context) {
 		var err error
 		client, err = secretmanager.NewClient(ctx)
 		if err == nil {
-			defer client.Close()
+			defer func() { _ = client.Close() }()
 		}
 	}
 

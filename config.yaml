@@ -4,19 +4,28 @@ gemini:
   model: "gemini-2.5-flash"
 
 elevenlabs:
-  voice_id: "oAlEJuW30knHWhA6cF0e"
-  model: "eleven_flash_v2_5"
+  voice_id: "esy0r39YPLQjOczyOib8"
+  model: "eleven_multilingual_v2"
   stability: 0.75
   similarity: 0.75
   voices:
     - name: "Host"
-      id: "oAlEJuW30knHWhA6cF0e"
+      id: "esy0r39YPLQjOczyOib8"
       stability: 0.70
       similarity: 0.80
     - name: "Guest"
-      id: "A4AyGcPAjb1pHgflyZZp"
-      stability: 0.75
+      id: "NOpBlnGInO9m6vDvFkFC"
+      stability: 0.85
       similarity: 0.75
+
+fishaudio:
+  enabled: true
+  voice_id: "54e3a85ac9594ffa83264b8a494b901b"
+
+characters:
+  dir: "./assets/characters"
+  host: "SpongeBob"
+  guest: "Patrick"
 
 content:
   script_length: 50
@@ -35,7 +44,7 @@ video:
   output_dir: "./output"
   cache_dir: "./.cache"
   resolution: "1080x1920"
-  max_duration: 60.0
+  max_duration: 90.0
 
 music:
   enabled: true
@@ -63,3 +72,18 @@ youtube:
 gcs:
   enabled: false
   background_dir: "backgrounds"
+
+reddit:
+  subreddits:
+    - "cscareerquestions"
+    - "learnprogramming"
+    - "programming"
+    - "compsci"
+    - "AskComputerScience"
+    - "ExperiencedDevs"
+  sort: "hot"
+  post_limit: 10
+  comment_limit: 15
+
+telegram:
+  default_chat_id: 0

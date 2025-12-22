@@ -39,6 +39,7 @@ func Parse(text string) *Script {
 			if strings.HasPrefix(text, "(") && strings.HasSuffix(text, ")") {
 				continue
 			}
+			text = stripFormatting(text)
 			script.Lines = append(script.Lines, Line{
 				Speaker: speaker,
 				Text:    text,
@@ -47,6 +48,13 @@ func Parse(text string) *Script {
 	}
 
 	return script
+}
+
+func stripFormatting(text string) string {
+	text = strings.ReplaceAll(text, "*", "")
+	text = strings.ReplaceAll(text, "_", "")
+	text = strings.ReplaceAll(text, "~", "")
+	return text
 }
 
 func (s *Script) Speakers() []string {

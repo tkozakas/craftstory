@@ -1,35 +1,22 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"image"
-	_ "image/jpeg"
-	_ "image/png"
 	"log/slog"
 	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
-	"time"
 
 	"craftstory/internal/dialogue"
-	"craftstory/internal/imagesearch"
 	"craftstory/internal/llm"
 	"craftstory/internal/tts"
 	"craftstory/internal/uploader"
 	"craftstory/internal/video"
+	"craftstory/internal/visuals"
 	"craftstory/pkg/config"
 )
 
-var (
-	sanitizeRegex  = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
-	wordSplitRegex = regexp.MustCompile(`\s+`)
-)
-
 type Pipeline struct {
-	svc *Service
+	service *Service
 }
 
 type GenerateResult struct {
@@ -41,189 +28,62 @@ type GenerateResult struct {
 	Duration      float64
 }
 
-type BatchResult struct {
-	Results   []*GenerateResult
-	Errors    []BatchError
-	Succeeded int
-	Failed    int
-}
-
-type BatchError struct {
-	Topic string
-	Error error
-}
-
 type UploadRequest struct {
 	VideoPath   string
 	Title       string
 	Description string
 }
 
-func NewPipeline(svc *Service) *Pipeline {
-	return &Pipeline{svc: svc}
+type generationContext struct {
+	ctx            context.Context
+	pipeline       *Pipeline
+	session        *session
+	voices         []tts.VoiceConfig
+	voiceMap       map[string]tts.VoiceConfig
+	isConversation bool
 }
 
-func (p *Pipeline) Generate(ctx context.Context, topic string) (*GenerateResult, error) {
-	cfg := p.svc.Config()
-
-	if cfg.Content.ConversationMode && len(cfg.ElevenLabs.Voices) >= 2 {
-		return p.generateConversation(ctx, topic)
-	}
-	return p.generateSingleVoice(ctx, topic)
+type audioResult struct {
+	data         []byte
+	timings      []tts.WordTiming
+	charOverlays []video.CharacterOverlay
+	duration     float64
+	script       string
 }
 
-func (p *Pipeline) GenerateFromReddit(ctx context.Context, subreddit string, limit int) (*GenerateResult, error) {
-	posts, err := p.svc.Reddit().GetTopStories(ctx, subreddit, limit)
-	if err != nil {
-		return nil, fmt.Errorf("fetch reddit posts: %w", err)
-	}
-
-	if len(posts) == 0 {
-		return nil, fmt.Errorf("no posts found in subreddit: %s", subreddit)
-	}
-
-	post := posts[0]
-	content := post.Title
-	if post.Selftext != "" {
-		content = post.Title + "\n\n" + post.Selftext
-	}
-
-	return p.Generate(ctx, content)
+func NewPipeline(service *Service) *Pipeline {
+	return &Pipeline{service: service}
 }
 
-func (p *Pipeline) Upload(ctx context.Context, req UploadRequest) (*uploader.UploadResponse, error) {
-	cfg := p.svc.Config()
+func (pipeline *Pipeline) Generate(ctx context.Context, topic string) (*GenerateResult, error) {
+	generation := pipeline.newGenerationContext(ctx)
 
-	uploadReq := uploader.UploadRequest{
-		FilePath:    req.VideoPath,
-		Title:       req.Title,
-		Description: req.Description,
-		Tags:        cfg.YouTube.DefaultTags,
-		Privacy:     cfg.YouTube.PrivacyStatus,
-	}
-
-	resp, err := p.svc.Uploader().Upload(ctx, uploadReq)
-	if err != nil {
-		return nil, fmt.Errorf("upload video: %w", err)
-	}
-	return resp, nil
-}
-
-func (p *Pipeline) GenerateAndUpload(ctx context.Context, topic string) (*uploader.UploadResponse, error) {
-	result, err := p.Generate(ctx, topic)
+	slog.Info("Generating script...", "conversation", generation.isConversation)
+	script, cues, err := generation.generateScript(topic)
 	if err != nil {
 		return nil, err
 	}
 
-	return p.Upload(ctx, UploadRequest{
-		VideoPath:   result.VideoPath,
-		Title:       result.Title + " #shorts",
-		Description: fmt.Sprintf("A short video about %s\n\n#shorts #facts", topic),
-	})
-}
-
-func (p *Pipeline) GenerateBatch(ctx context.Context, topics []string) *BatchResult {
-	result := &BatchResult{
-		Results: make([]*GenerateResult, 0, len(topics)),
-		Errors:  make([]BatchError, 0),
+	title := generation.generateTitle(script, topic)
+	if err := generation.session.finalize(title); err != nil {
+		return nil, err
 	}
+	_ = os.WriteFile(generation.session.scriptPath(), []byte(script), 0644)
 
-	for _, topic := range topics {
-		genResult, err := p.Generate(ctx, topic)
-		if err != nil {
-			result.Errors = append(result.Errors, BatchError{Topic: topic, Error: err})
-			result.Failed++
-			continue
-		}
-		result.Results = append(result.Results, genResult)
-		result.Succeeded++
-	}
-
-	return result
-}
-
-func (p *Pipeline) GenerateBatchFromReddit(ctx context.Context, subreddit string, limit int) *BatchResult {
-	posts, err := p.svc.Reddit().GetTopStories(ctx, subreddit, limit)
-	if err != nil {
-		return &BatchResult{
-			Errors: []BatchError{{Topic: subreddit, Error: err}},
-			Failed: 1,
-		}
-	}
-
-	if len(posts) == 0 {
-		return &BatchResult{
-			Errors: []BatchError{{Topic: subreddit, Error: fmt.Errorf("no posts found")}},
-			Failed: 1,
-		}
-	}
-
-	topics := make([]string, 0, len(posts))
-	for _, post := range posts {
-		content := post.Title
-		if post.Selftext != "" {
-			content = post.Title + "\n\n" + post.Selftext
-		}
-		topics = append(topics, content)
-	}
-
-	return p.GenerateBatch(ctx, topics)
-}
-
-func (p *Pipeline) GenerateBatchAndUpload(ctx context.Context, topics []string) ([]*uploader.UploadResponse, []BatchError) {
-	batchResult := p.GenerateBatch(ctx, topics)
-
-	responses := make([]*uploader.UploadResponse, 0, len(batchResult.Results))
-	allErrors := append([]BatchError{}, batchResult.Errors...)
-
-	for _, result := range batchResult.Results {
-		resp, err := p.Upload(ctx, UploadRequest{
-			VideoPath:   result.VideoPath,
-			Title:       result.Title + " #shorts",
-			Description: "Generated video\n\n#shorts #facts",
-		})
-		if err != nil {
-			allErrors = append(allErrors, BatchError{Topic: result.Title, Error: err})
-			continue
-		}
-		responses = append(responses, resp)
-	}
-
-	return responses, allErrors
-}
-
-func (p *Pipeline) generateSingleVoice(ctx context.Context, topic string) (*GenerateResult, error) {
-	cfg := p.svc.Config()
-	sess := newSession(cfg.Video.OutputDir)
-
-	slog.Info("Generating script...")
-	script, visuals, err := p.generateScript(ctx, topic)
+	slog.Info("Generating audio...", "length", len(script))
+	audio, err := generation.generateAudio(script)
 	if err != nil {
 		return nil, err
 	}
-
-	title := p.generateTitle(ctx, script, topic)
-	if err := sess.finalize(title); err != nil {
-		return nil, err
-	}
-
-	_ = os.WriteFile(sess.scriptPath(), []byte(script), 0644)
-
-	slog.Info("Generating speech...", "length", len(script))
-	speechResult, err := p.svc.TTS().GenerateSpeechWithTimings(ctx, script)
-	if err != nil {
-		return nil, fmt.Errorf("generate speech: %w", err)
-	}
-
-	if err := os.WriteFile(sess.audioPath(), speechResult.Audio, 0644); err != nil {
+	if err := os.WriteFile(generation.session.audioPath(), audio.data, 0644); err != nil {
 		return nil, fmt.Errorf("save audio: %w", err)
 	}
 
 	slog.Info("Fetching images...")
-	overlays := p.fetchVisualImages(ctx, sess, script, visuals, speechResult.Timings)
+	images := generation.fetchImages(script, cues, audio.timings)
 
 	slog.Info("Assembling video...")
-	result, err := p.assembleVideo(ctx, sess, script, speechResult, overlays, nil)
+	result, err := generation.assemble(audio, images)
 	if err != nil {
 		return nil, err
 	}
@@ -231,145 +91,125 @@ func (p *Pipeline) generateSingleVoice(ctx context.Context, topic string) (*Gene
 	return &GenerateResult{
 		Title:         title,
 		ScriptContent: script,
-		OutputDir:     sess.dir,
-		AudioPath:     sess.audioPath(),
+		OutputDir:     generation.session.dir,
+		AudioPath:     generation.session.audioPath(),
 		VideoPath:     result.OutputPath,
 		Duration:      result.Duration,
 	}, nil
 }
 
-func (p *Pipeline) generateConversation(ctx context.Context, topic string) (*GenerateResult, error) {
-	cfg := p.svc.Config()
-	sess := newSession(cfg.Video.OutputDir)
-
-	voices := p.getConversationVoices()
-	voiceMap := buildVoiceMap(voices)
-
-	slog.Info("Generating conversation script...")
-	script, err := p.generateConversationScript(ctx, topic, voices)
-	if err != nil {
-		return nil, err
+func (pipeline *Pipeline) newGenerationContext(ctx context.Context) *generationContext {
+	config := pipeline.service.Config()
+	voices := pipeline.voices()
+	return &generationContext{
+		ctx:            ctx,
+		pipeline:       pipeline,
+		session:        newSession(config.Video.OutputDir),
+		voices:         voices,
+		voiceMap:       buildVoiceMap(voices),
+		isConversation: config.Content.ConversationMode && len(voices) >= 2,
 	}
-
-	parsed := dialogue.Parse(script)
-	if parsed.IsEmpty() {
-		return p.generateSingleVoice(ctx, topic)
-	}
-
-	title := p.generateTitle(ctx, script, topic)
-	if err := sess.finalize(title); err != nil {
-		return nil, err
-	}
-
-	_ = os.WriteFile(sess.scriptPath(), []byte(script), 0644)
-
-	slog.Info("Generating speech segments...", "lines", len(parsed.Lines))
-	segments, err := p.generateSpeechSegments(ctx, parsed, voiceMap, voices[0].Name)
-	if err != nil {
-		return nil, err
-	}
-
-	slog.Info("Stitching audio...")
-	stitched, err := video.NewAudioStitcher(sess.dir).Stitch(ctx, segments)
-	if err != nil {
-		return nil, fmt.Errorf("stitch audio: %w", err)
-	}
-
-	if err := os.WriteFile(sess.audioPath(), stitched.Data, 0644); err != nil {
-		return nil, fmt.Errorf("save audio: %w", err)
-	}
-
-	charOverlays := buildCharacterOverlays(stitched.Segments, voiceMap)
-
-	slog.Info("Fetching images...")
-	imageOverlays := p.fetchConversationVisuals(ctx, sess, parsed, stitched)
-
-	slog.Info("Assembling video...")
-	result, err := p.assembleConversation(ctx, sess, parsed, stitched, imageOverlays, charOverlays)
-	if err != nil {
-		return nil, err
-	}
-
-	return &GenerateResult{
-		Title:         title,
-		ScriptContent: script,
-		OutputDir:     sess.dir,
-		AudioPath:     sess.audioPath(),
-		VideoPath:     result.OutputPath,
-		Duration:      result.Duration,
-	}, nil
 }
 
-func (p *Pipeline) generateScript(ctx context.Context, topic string) (string, []llm.VisualCue, error) {
-	cfg := p.svc.Config()
+func (generation *generationContext) generateScript(topic string) (string, []llm.VisualCue, error) {
+	config := generation.pipeline.service.Config()
+	llmClient := generation.pipeline.service.LLM()
 
-	if !cfg.Visuals.Enabled || p.svc.ImageSearch() == nil {
-		script, err := p.svc.LLM().GenerateScript(ctx, topic, cfg.Content.ScriptLength, cfg.Content.HookDuration)
+	if generation.isConversation {
+		names := generation.speakerNames()
+		script, err := llmClient.GenerateConversation(generation.ctx, topic, names, config.Content.ScriptLength, config.Content.HookDuration)
+		if err != nil {
+			return "", nil, fmt.Errorf("generate conversation: %w", err)
+		}
+		return script, nil, nil
+	}
+
+	if !config.Visuals.Enabled || generation.pipeline.service.Fetcher() == nil {
+		script, err := llmClient.GenerateScript(generation.ctx, topic, config.Content.ScriptLength, config.Content.HookDuration)
 		return script, nil, err
 	}
 
-	result, err := p.svc.LLM().GenerateScriptWithVisuals(ctx, topic, cfg.Content.ScriptLength, cfg.Content.HookDuration)
+	result, err := llmClient.GenerateScriptWithVisuals(generation.ctx, topic, config.Content.ScriptLength, config.Content.HookDuration)
 	if err != nil {
 		return "", nil, fmt.Errorf("generate script: %w", err)
 	}
 	return result.Script, result.Visuals, nil
 }
 
-func (p *Pipeline) generateConversationScript(ctx context.Context, topic string, voices []tts.VoiceConfig) (string, error) {
-	cfg := p.svc.Config()
-
-	speakerNames := make([]string, len(voices))
-	for i, v := range voices {
-		speakerNames[i] = v.Name
+func (generation *generationContext) speakerNames() []string {
+	names := make([]string, len(generation.voices))
+	for i, voice := range generation.voices {
+		names[i] = voice.Name
 	}
-
-	script, err := p.svc.LLM().GenerateConversation(ctx, topic, speakerNames, cfg.Content.ScriptLength, cfg.Content.HookDuration)
-	if err != nil {
-		return "", fmt.Errorf("generate conversation: %w", err)
-	}
-	return script, nil
+	return names
 }
 
-func (p *Pipeline) generateTitle(ctx context.Context, script, fallback string) string {
-	title, err := p.svc.LLM().GenerateTitle(ctx, script)
+func (generation *generationContext) generateTitle(script, fallback string) string {
+	title, err := generation.pipeline.service.LLM().GenerateTitle(generation.ctx, script)
 	if err != nil {
 		return fallback
 	}
 	return title
 }
 
-func (p *Pipeline) getConversationVoices() []tts.VoiceConfig {
-	cfg := p.svc.Config()
-	voices := cfg.ElevenLabs.Voices
-
-	result := make([]tts.VoiceConfig, len(voices))
-	for i, v := range voices {
-		result[i] = tts.VoiceConfig{
-			ID:         v.ID,
-			Name:       v.Name,
-			Avatar:     v.Avatar,
-			Stability:  v.Stability,
-			Similarity: v.Similarity,
-		}
+func (generation *generationContext) generateAudio(script string) (*audioResult, error) {
+	if !generation.isConversation {
+		return generation.generateSingleAudio(script)
 	}
-	return result
+	return generation.generateConversationAudio(script)
 }
 
-func (p *Pipeline) generateSpeechSegments(ctx context.Context, parsed *dialogue.Script, voiceMap map[string]tts.VoiceConfig, defaultSpeaker string) ([]video.AudioSegment, error) {
-	segments := make([]video.AudioSegment, len(parsed.Lines))
-	total := len(parsed.Lines)
+func (generation *generationContext) generateSingleAudio(script string) (*audioResult, error) {
+	result, err := generation.pipeline.service.TTS().GenerateSpeechWithTimings(generation.ctx, script)
+	if err != nil {
+		return nil, fmt.Errorf("generate speech: %w", err)
+	}
+	return &audioResult{
+		data:     result.Audio,
+		timings:  result.Timings,
+		duration: audioDuration(result.Timings),
+		script:   script,
+	}, nil
+}
 
-	// Process sequentially for consistent audio quality
+func (generation *generationContext) generateConversationAudio(script string) (*audioResult, error) {
+	parsed := dialogue.Parse(script)
+	if parsed.IsEmpty() {
+		return generation.generateSingleAudio(script)
+	}
+
+	segments, err := generation.generateSpeechSegments(parsed)
+	if err != nil {
+		return nil, err
+	}
+
+	stitched, err := video.NewAudioStitcher(generation.pipeline.service.Config().Video.OutputDir).Stitch(generation.ctx, segments)
+	if err != nil {
+		return nil, fmt.Errorf("stitch audio: %w", err)
+	}
+
+	return &audioResult{
+		data:         stitched.Data,
+		timings:      stitched.Timings,
+		charOverlays: buildCharacterOverlays(stitched.Segments, generation.voiceMap),
+		duration:     stitched.Duration,
+		script:       parsed.FullText(),
+	}, nil
+}
+
+func (generation *generationContext) generateSpeechSegments(parsed *dialogue.Script) ([]video.AudioSegment, error) {
+	segments := make([]video.AudioSegment, len(parsed.Lines))
+	defaultVoice := generation.voices[0]
+
 	for i, line := range parsed.Lines {
-		voice, ok := voiceMap[line.Speaker]
+		voice, ok := generation.voiceMap[line.Speaker]
 		if !ok {
 			slog.Warn("unknown speaker, using default", "speaker", line.Speaker)
-			voice = voiceMap[defaultSpeaker]
+			voice = defaultVoice
 		}
 
-		slog.Info("Generating speech", "line", i+1, "total", total, "speaker", line.Speaker)
-
-		result, err := p.svc.TTS().GenerateSpeechWithVoice(ctx, line.Text, voice)
+		slog.Info("Generating speech", "line", i+1, "total", len(parsed.Lines), "speaker", line.Speaker)
+		result, err := generation.pipeline.service.TTS().GenerateSpeechWithVoice(generation.ctx, line.Text, voice)
 		if err != nil {
 			return nil, fmt.Errorf("generate speech for line %d: %w", i+1, err)
 		}
@@ -380,332 +220,200 @@ func (p *Pipeline) generateSpeechSegments(ctx context.Context, parsed *dialogue.
 			Speaker: line.Speaker,
 		}
 	}
-
 	return segments, nil
 }
 
-func (p *Pipeline) fetchVisualImages(ctx context.Context, sess *session, script string, visuals []llm.VisualCue, timings []tts.WordTiming) []video.ImageOverlay {
-	if p.svc.ImageSearch() == nil {
-		slog.Debug("Image search client not configured")
+func (generation *generationContext) fetchImages(script string, cues []llm.VisualCue, timings []tts.WordTiming) []video.ImageOverlay {
+	fetcher := generation.pipeline.service.Fetcher()
+	if fetcher == nil {
 		return nil
 	}
-	if len(visuals) == 0 {
-		slog.Debug("No visual cues provided")
-		return nil
-	}
-
-	slog.Info("Processing visual cues", "count", len(visuals))
-	cfg := p.svc.Config()
-	overlays := make([]video.ImageOverlay, 0, len(visuals))
-
-	for i, cue := range visuals {
-		slog.Debug("Processing cue", "index", i, "keyword", cue.Keyword, "query", cue.SearchQuery)
-		overlay := p.fetchSingleImage(ctx, sess, i, cue, script, timings, cfg)
-		if overlay != nil {
-			overlays = append(overlays, *overlay)
-			slog.Info("Fetched image", "keyword", cue.Keyword, "path", overlay.ImagePath)
-		} else {
-			slog.Warn("Failed to fetch image", "keyword", cue.Keyword, "query", cue.SearchQuery)
-		}
-	}
-
-	slog.Info("Image fetch complete", "total", len(visuals), "success", len(overlays))
-	return p.enforceImageConstraints(overlays)
-}
-
-func (p *Pipeline) fetchSingleImage(ctx context.Context, sess *session, index int, cue llm.VisualCue, script string, timings []tts.WordTiming, cfg *config.Config) *video.ImageOverlay {
-	wordIndex := findKeywordIndex(script, cue.Keyword)
-	if wordIndex < 0 || wordIndex >= len(timings) {
-		slog.Debug("Keyword not found in timings", "keyword", cue.Keyword, "wordIndex", wordIndex, "timingsLen", len(timings))
-		return nil
-	}
-
-	results, err := p.svc.ImageSearch().Search(ctx, cue.SearchQuery, 5)
-	if err != nil {
-		slog.Debug("Image search failed", "query", cue.SearchQuery, "error", err)
-		return nil
-	}
-	if len(results) == 0 {
-		slog.Debug("No search results", "query", cue.SearchQuery)
-		return nil
-	}
-
-	imageData, ext := p.downloadValidImage(ctx, results)
-	if imageData == nil {
-		return nil
-	}
-
-	imagePath := sess.imagePath(index, ext)
-	if err := os.WriteFile(imagePath, imageData, 0644); err != nil {
-		return nil
-	}
-
-	return &video.ImageOverlay{
-		ImagePath: imagePath,
-		StartTime: timings[wordIndex].StartTime,
-		EndTime:   timings[wordIndex].StartTime + cfg.Visuals.DisplayTime,
-		Width:     cfg.Visuals.ImageWidth,
-		Height:    cfg.Visuals.ImageHeight,
-	}
-}
-
-func (p *Pipeline) downloadValidImage(ctx context.Context, results []imagesearch.SearchResult) ([]byte, string) {
-	for i, result := range results {
-		slog.Debug("Trying to download image", "index", i, "url", result.ImageURL)
-		data, err := p.svc.ImageSearch().DownloadImage(ctx, result.ImageURL)
-		if err != nil {
-			slog.Debug("Download failed", "error", err)
-			continue
-		}
-
-		if !isValidImage(data) {
-			slog.Debug("Invalid image format", "size", len(data))
-			continue
-		}
-		if len(data) < 10000 {
-			slog.Debug("Image too small", "size", len(data))
-			continue
-		}
-
-		ext := ".jpg"
-		if strings.Contains(result.ImageURL, ".png") {
-			ext = ".png"
-		}
-		slog.Debug("Image downloaded successfully", "size", len(data))
-		return data, ext
-	}
-	return nil, ""
-}
-
-func (p *Pipeline) fetchConversationVisuals(ctx context.Context, sess *session, parsed *dialogue.Script, stitched *video.StitchedAudio) []video.ImageOverlay {
-	cfg := p.svc.Config()
-	if !cfg.Visuals.Enabled || p.svc.ImageSearch() == nil {
-		return nil
-	}
-
-	fullText := parsed.FullText()
-	visuals := p.generateVisualCues(ctx, fullText)
-	if len(visuals) == 0 {
-		return nil
-	}
-
-	return p.fetchVisualImages(ctx, sess, fullText, visuals, stitched.Timings)
-}
-
-func (p *Pipeline) generateVisualCues(ctx context.Context, script string) []llm.VisualCue {
-	visuals, err := p.svc.LLM().GenerateVisualsForScript(ctx, script)
-	if err != nil {
-		return nil
-	}
-	return visuals
-}
-
-func (p *Pipeline) assembleVideo(ctx context.Context, sess *session, script string, speech *tts.SpeechResult, imageOverlays []video.ImageOverlay, charOverlays []video.CharacterOverlay) (*video.AssembleResult, error) {
-	cfg := p.svc.Config()
-	duration := audioDuration(speech.Timings)
-	maxDuration := cfg.Video.MaxDuration
-	if maxDuration > 0 && duration > maxDuration {
-		return nil, fmt.Errorf("audio duration %.1fs exceeds limit of %.0fs", duration, maxDuration)
-	}
-
-	req := video.AssembleRequest{
-		AudioPath:         sess.audioPath(),
-		AudioDuration:     duration,
-		Script:            script,
-		OutputPath:        sess.videoPath(),
-		WordTimings:       speech.Timings,
-		ImageOverlays:     imageOverlays,
-		CharacterOverlays: charOverlays,
-	}
-
-	result, err := p.svc.Assembler().Assemble(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("assemble video: %w", err)
-	}
-	return result, nil
-}
-
-func (p *Pipeline) assembleConversation(ctx context.Context, sess *session, parsed *dialogue.Script, stitched *video.StitchedAudio, imageOverlays []video.ImageOverlay, charOverlays []video.CharacterOverlay) (*video.AssembleResult, error) {
-	req := video.AssembleRequest{
-		AudioPath:         sess.audioPath(),
-		AudioDuration:     stitched.Duration,
-		Script:            parsed.FullText(),
-		OutputPath:        sess.videoPath(),
-		WordTimings:       stitched.Timings,
-		ImageOverlays:     imageOverlays,
-		CharacterOverlays: charOverlays,
-	}
-
-	result, err := p.svc.Assembler().Assemble(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("assemble video: %w", err)
-	}
-	return result, nil
-}
-
-func (p *Pipeline) enforceImageConstraints(overlays []video.ImageOverlay) []video.ImageOverlay {
-	if len(overlays) <= 1 {
-		return overlays
-	}
-
-	minGap := p.svc.Config().Visuals.MinGap
-	filtered := make([]video.ImageOverlay, 0, len(overlays))
-	filtered = append(filtered, overlays[0])
-
-	for i := 1; i < len(overlays); i++ {
-		gap := overlays[i].StartTime - filtered[len(filtered)-1].EndTime
-		if gap >= minGap {
-			filtered = append(filtered, overlays[i])
-		}
-	}
-	return filtered
-}
-
-func buildVoiceMap(voices []tts.VoiceConfig) map[string]tts.VoiceConfig {
-	m := make(map[string]tts.VoiceConfig, len(voices))
-	for _, v := range voices {
-		m[v.Name] = v
-	}
-	return m
-}
-
-func buildCharacterOverlays(segments []video.SegmentInfo, voiceMap map[string]tts.VoiceConfig) []video.CharacterOverlay {
-	speakerPositions := make(map[string]int)
-	nextPosition := 0
-
-	var overlays []video.CharacterOverlay
-	for _, seg := range segments {
-		voice, ok := voiceMap[seg.Speaker]
-		if !ok || voice.Avatar == "" {
-			continue
-		}
-
-		pos, exists := speakerPositions[seg.Speaker]
-		if !exists {
-			pos = nextPosition
-			speakerPositions[seg.Speaker] = pos
-			nextPosition = (nextPosition + 1) % 2
-		}
-
-		overlays = append(overlays, video.CharacterOverlay{
-			Speaker:    seg.Speaker,
-			AvatarPath: voice.Avatar,
-			StartTime:  seg.StartTime,
-			EndTime:    seg.EndTime,
-			Position:   pos,
+	if len(cues) > 0 {
+		return fetcher.Fetch(generation.ctx, visuals.FetchRequest{
+			Script:   script,
+			Visuals:  cues,
+			Timings:  timings,
+			ImageDir: generation.session.dir,
 		})
 	}
-	return overlays
+	return fetcher.FetchForConversation(generation.ctx, script, timings, generation.session.dir)
 }
 
-type session struct {
-	id      string
-	dir     string
-	baseDir string
-}
-
-func newSession(baseDir string) *session {
-	return &session{
-		id:      time.Now().Format("20060102_150405"),
-		baseDir: baseDir,
-	}
-}
-
-func (s *session) finalize(title string) error {
-	sanitized := sanitizeForPath(title)
-	if sanitized == "" {
-		sanitized = "untitled"
-	}
-	if len(sanitized) > 50 {
-		sanitized = sanitized[:50]
+func (generation *generationContext) assemble(audio *audioResult, images []video.ImageOverlay) (*video.AssembleResult, error) {
+	config := generation.pipeline.service.Config()
+	if config.Video.MaxDuration > 0 && audio.duration > config.Video.MaxDuration {
+		return nil, fmt.Errorf("audio duration %.1fs exceeds limit of %.0fs", audio.duration, config.Video.MaxDuration)
 	}
 
-	s.dir = filepath.Join(s.baseDir, fmt.Sprintf("%s_%s", s.id, sanitized))
-	return os.MkdirAll(s.dir, 0755)
+	return generation.pipeline.service.Assembler().Assemble(generation.ctx, video.AssembleRequest{
+		AudioPath:         generation.session.audioPath(),
+		AudioDuration:     audio.duration,
+		Script:            audio.script,
+		OutputPath:        generation.session.videoPath(),
+		WordTimings:       audio.timings,
+		ImageOverlays:     images,
+		CharacterOverlays: audio.charOverlays,
+	})
 }
 
-func (s *session) audioPath() string  { return filepath.Join(s.dir, "audio.mp3") }
-func (s *session) videoPath() string  { return filepath.Join(s.dir, "video.mp4") }
-func (s *session) scriptPath() string { return filepath.Join(s.dir, "script.txt") }
+func (pipeline *Pipeline) voices() []tts.VoiceConfig {
+	cfg := pipeline.service.Config()
+	var result []tts.VoiceConfig
 
-func (s *session) imagePath(index int, ext string) string {
-	return filepath.Join(s.dir, fmt.Sprintf("image_%d%s", index, ext))
-}
-
-func sanitizeForPath(s string) string {
-	s = strings.ToLower(s)
-	s = sanitizeRegex.ReplaceAllString(s, "_")
-	return strings.Trim(s, "_")
-}
-
-func findKeywordIndex(script, keyword string) int {
-	if keyword == "" {
-		return -1
+	host := cfg.GetHost()
+	if host != nil {
+		result = append(result, tts.VoiceConfig{
+			ID:     host.VoiceID,
+			Name:   host.Name,
+			Avatar: host.ImagePath,
+		})
 	}
 
-	words := wordSplitRegex.Split(script, -1)
-	keywordLower := strings.ToLower(keyword)
-	keywordWords := wordSplitRegex.Split(keywordLower, -1)
-
-	if len(keywordWords) == 1 {
-		return findSingleKeyword(words, keywordLower)
+	guest := cfg.GetGuest()
+	if guest != nil {
+		result = append(result, tts.VoiceConfig{
+			ID:     guest.VoiceID,
+			Name:   guest.Name,
+			Avatar: guest.ImagePath,
+		})
 	}
-	return findMultiWordKeyword(words, keywordWords)
+
+	if len(result) > 0 {
+		return result
+	}
+
+	var voices []config.Voice
+	if cfg.FishAudio.Enabled {
+		voices = cfg.FishAudio.Voices
+	} else {
+		voices = cfg.ElevenLabs.Voices
+	}
+	for _, voice := range voices {
+		result = append(result, tts.VoiceConfig{
+			ID:         voice.ID,
+			Name:       voice.Name,
+			Avatar:     voice.Avatar,
+			Stability:  voice.Stability,
+			Similarity: voice.Similarity,
+		})
+	}
+	return result
 }
 
-func findSingleKeyword(words []string, keyword string) int {
-	for i, word := range words {
-		if cleanWord(word) == keyword {
-			return i
+func (pipeline *Pipeline) GenerateFromReddit(ctx context.Context) (*GenerateResult, error) {
+	cfg := pipeline.service.Config()
+	redditCfg := cfg.Reddit
+
+	subreddits := redditCfg.Subreddits
+	if len(subreddits) == 0 {
+		subreddits = []string{"cscareerquestions", "learnprogramming"}
+	}
+
+	subreddit := subreddits[randomInt(len(subreddits))]
+	sort := redditCfg.Sort
+	if sort == "" {
+		sort = "hot"
+	}
+	postLimit := redditCfg.PostLimit
+	if postLimit <= 0 {
+		postLimit = 10
+	}
+	commentLimit := redditCfg.CommentLimit
+	if commentLimit <= 0 {
+		commentLimit = 15
+	}
+
+	slog.Info("Fetching Reddit posts", "subreddit", subreddit, "sort", sort)
+	posts, err := pipeline.service.Reddit().GetSubredditPosts(ctx, subreddit, sort, postLimit)
+	if err != nil {
+		return nil, fmt.Errorf("fetch reddit posts: %w", err)
+	}
+	if len(posts) == 0 {
+		return nil, fmt.Errorf("no posts found in subreddit: %s", subreddit)
+	}
+
+	post := posts[randomInt(len(posts))]
+	slog.Info("Selected post", "title", post.Title)
+
+	comments, err := pipeline.service.Reddit().GetPostComments(ctx, post.Permalink, commentLimit)
+	if err != nil {
+		slog.Warn("Failed to fetch comments", "error", err)
+	}
+
+	var commentTexts []string
+	for _, c := range comments {
+		if len(c.Body) > 500 {
+			commentTexts = append(commentTexts, c.Body[:500]+"...")
+		} else {
+			commentTexts = append(commentTexts, c.Body)
 		}
 	}
-	for i, word := range words {
-		if strings.Contains(cleanWord(word), keyword) {
-			return i
-		}
+
+	thread := llm.RedditThread{
+		Title:    post.Title,
+		Post:     post.Selftext,
+		Comments: commentTexts,
 	}
-	return -1
+
+	return pipeline.generateFromThread(ctx, thread)
 }
 
-func findMultiWordKeyword(words, keywordWords []string) int {
-	for i := 0; i <= len(words)-len(keywordWords); i++ {
-		if matchesAt(words, keywordWords, i) {
-			return i
-		}
+func (pipeline *Pipeline) generateFromThread(ctx context.Context, thread llm.RedditThread) (*GenerateResult, error) {
+	generation := pipeline.newGenerationContext(ctx)
+	cfg := pipeline.service.Config()
+
+	slog.Info("Generating script from Reddit thread...", "title", thread.Title)
+	names := generation.speakerNames()
+	script, err := pipeline.service.LLM().GenerateRedditConversation(ctx, thread, names, cfg.Content.ScriptLength, cfg.Content.HookDuration)
+	if err != nil {
+		return nil, fmt.Errorf("generate reddit conversation: %w", err)
 	}
-	return -1
+
+	title := generation.generateTitle(script, thread.Title)
+	if err := generation.session.finalize(title); err != nil {
+		return nil, err
+	}
+	_ = os.WriteFile(generation.session.scriptPath(), []byte(script), 0644)
+
+	slog.Info("Generating audio...", "length", len(script))
+	audio, err := generation.generateAudio(script)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(generation.session.audioPath(), audio.data, 0644); err != nil {
+		return nil, fmt.Errorf("save audio: %w", err)
+	}
+
+	slog.Info("Fetching images...")
+	images := generation.fetchImages(script, nil, audio.timings)
+
+	slog.Info("Assembling video...")
+	result, err := generation.assemble(audio, images)
+	if err != nil {
+		return nil, err
+	}
+
+	return &GenerateResult{
+		Title:         title,
+		ScriptContent: script,
+		OutputDir:     generation.session.dir,
+		AudioPath:     generation.session.audioPath(),
+		VideoPath:     result.OutputPath,
+		Duration:      result.Duration,
+	}, nil
 }
 
-func matchesAt(words, keywordWords []string, start int) bool {
-	for j, kw := range keywordWords {
-		if cleanWord(words[start+j]) != kw {
-			return false
-		}
+func (pipeline *Pipeline) Upload(ctx context.Context, request UploadRequest) (*uploader.UploadResponse, error) {
+	config := pipeline.service.Config()
+	response, err := pipeline.service.Uploader().Upload(ctx, uploader.UploadRequest{
+		FilePath:    request.VideoPath,
+		Title:       request.Title,
+		Description: request.Description,
+		Tags:        config.YouTube.DefaultTags,
+		Privacy:     config.YouTube.PrivacyStatus,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("upload video: %w", err)
 	}
-	return true
-}
-
-func cleanWord(word string) string {
-	return strings.ToLower(strings.Trim(word, ".,!?;:'\"()[]{}"))
-}
-
-func audioDuration(timings []tts.WordTiming) float64 {
-	if len(timings) == 0 {
-		return 0
-	}
-	return timings[len(timings)-1].EndTime
-}
-
-func isValidImage(data []byte) bool {
-	if len(data) < 100 {
-		return false
-	}
-	if bytes.HasPrefix(data, []byte{0xFF, 0xD8, 0xFF}) {
-		return true
-	}
-	if bytes.HasPrefix(data, []byte{0x89, 0x50, 0x4E, 0x47}) {
-		return true
-	}
-	_, _, err := image.Decode(bytes.NewReader(data))
-	return err == nil
+	return response, nil
 }

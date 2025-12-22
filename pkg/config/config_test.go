@@ -10,8 +10,8 @@ import (
 func TestLoadFromYAML(t *testing.T) {
 	tmp := t.TempDir()
 	orig, _ := os.Getwd()
-	defer os.Chdir(orig)
-	os.Chdir(tmp)
+	defer func() { _ = os.Chdir(orig) }()
+	_ = os.Chdir(tmp)
 
 	yaml := `
 gemini:
@@ -22,7 +22,7 @@ elevenlabs:
 content:
   script_length: 45
 `
-	os.WriteFile(filepath.Join(tmp, "config.yaml"), []byte(yaml), 0644)
+	_ = os.WriteFile(filepath.Join(tmp, "config.yaml"), []byte(yaml), 0644)
 
 	cfg, err := Load(context.Background())
 	if err != nil {
@@ -43,15 +43,13 @@ content:
 func TestLoadFromEnv(t *testing.T) {
 	tmp := t.TempDir()
 	orig, _ := os.Getwd()
-	defer os.Chdir(orig)
-	os.Chdir(tmp)
+	defer func() { _ = os.Chdir(orig) }()
+	_ = os.Chdir(tmp)
 
-	os.WriteFile(filepath.Join(tmp, "config.yaml"), []byte("gemini:\n  model: x"), 0644)
+	_ = os.WriteFile(filepath.Join(tmp, "config.yaml"), []byte("gemini:\n  model: x"), 0644)
 
-	os.Setenv("ELEVENLABS_API_KEY", "test-eleven")
-	os.Setenv("GOOGLE_CLOUD_PROJECT", "test-project")
-	defer os.Unsetenv("ELEVENLABS_API_KEY")
-	defer os.Unsetenv("GOOGLE_CLOUD_PROJECT")
+	t.Setenv("ELEVENLABS_API_KEY", "test-eleven")
+	t.Setenv("GOOGLE_CLOUD_PROJECT", "test-project")
 
 	cfg, err := Load(context.Background())
 	if err != nil {
@@ -69,8 +67,8 @@ func TestLoadFromEnv(t *testing.T) {
 func TestLoadMissingConfigFile(t *testing.T) {
 	tmp := t.TempDir()
 	orig, _ := os.Getwd()
-	defer os.Chdir(orig)
-	os.Chdir(tmp)
+	defer func() { _ = os.Chdir(orig) }()
+	_ = os.Chdir(tmp)
 
 	_, err := Load(context.Background())
 	if err == nil {
