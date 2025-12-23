@@ -111,15 +111,45 @@ func (pipeline *Pipeline) newGenerationContext(ctx context.Context) *generationC
 }
 
 func (generation *generationContext) generateScript(topic string) (string, error) {
-	config := generation.pipeline.service.Config()
 	llmClient := generation.pipeline.service.LLM()
+	wordCount := generation.calculateWordCount()
 
 	if generation.isConversation {
 		names := generation.speakerNames()
-		return llmClient.GenerateConversation(generation.ctx, topic, names, config.Content.WordCount)
+		return llmClient.GenerateConversation(generation.ctx, topic, names, wordCount)
 	}
 
-	return llmClient.GenerateScript(generation.ctx, topic, config.Content.WordCount)
+	return llmClient.GenerateScript(generation.ctx, topic, wordCount)
+}
+
+func (generation *generationContext) calculateWordCount() int {
+	config := generation.pipeline.service.Config()
+
+	if config.Content.WordCount > 0 {
+		return config.Content.WordCount
+	}
+
+	targetDuration := config.Content.TargetDuration
+	if targetDuration <= 0 {
+		targetDuration = config.Video.MaxDuration * 0.85
+	}
+
+	speed := config.ElevenLabs.Speed
+	if speed <= 0 {
+		speed = 1.0
+	}
+
+	wordsPerMinute := 150.0 * speed
+	wordCount := int(targetDuration * wordsPerMinute / 60.0)
+
+	if wordCount < 50 {
+		wordCount = 50
+	}
+	if wordCount > 500 {
+		wordCount = 500
+	}
+
+	return wordCount
 }
 
 func (generation *generationContext) speakerNames() []string {

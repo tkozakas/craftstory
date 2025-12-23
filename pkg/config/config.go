@@ -55,8 +55,9 @@ type VoiceConfig struct {
 }
 
 type ContentConfig struct {
-	WordCount        int  `yaml:"word_count"`
-	ConversationMode bool `yaml:"conversation_mode"`
+	WordCount        int     `yaml:"word_count"`
+	ConversationMode bool    `yaml:"conversation_mode"`
+	TargetDuration   float64 `yaml:"target_duration"`
 }
 
 type VideoConfig struct {

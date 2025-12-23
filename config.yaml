@@ -14,7 +14,7 @@ elevenlabs:
     subtitle_color: "#FF69B4"
 
 content:
-  word_count: 150
+  target_duration: 60
   conversation_mode: true
 
 visuals:
