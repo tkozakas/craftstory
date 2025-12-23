@@ -6,15 +6,73 @@ tasks:
       - task: check
 
   setup:
-    desc: Setup environment and dependencies
+    desc: Interactive setup - prompts for API keys and creates .env
     cmds:
-      - uv sync
-      - mkdir -p assets/backgrounds assets/music assets/characters output
-      - gcloud secrets create groq-api-key --replication-policy="automatic" 2>/dev/null || true
-      - gcloud secrets create telegram-bot-token --replication-policy="automatic" 2>/dev/null || true
-      - echo "Add secrets with:"
-      - echo "  echo -n 'YOUR_KEY' | gcloud secrets versions add groq-api-key --data-file=-"
-      - echo "  echo -n 'YOUR_TOKEN' | gcloud secrets versions add telegram-bot-token --data-file=-"
+      - mkdir -p assets/backgrounds assets/music output
+      - |
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════════╗"
+        echo "║                    Craftstory Setup                          ║"
+        echo "╚══════════════════════════════════════════════════════════════╝"
+        echo ""
+        
+        # Check for existing .env
+        if [ -f .env ]; then
+          echo "Found existing .env file."
+          read -p "Overwrite? [y/N] " overwrite
+          if [ "$overwrite" != "y" ] && [ "$overwrite" != "Y" ]; then
+            echo "Setup cancelled."
+            exit 0
+          fi
+        fi
+        
+        touch .env.tmp
+        
+        # GROQ API Key (required)
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "1. GROQ API Key (required) - for AI script generation"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        read -p "Open browser to get key? [Y/n] " open_groq
+        if [ "$open_groq" != "n" ] && [ "$open_groq" != "N" ]; then
+          xdg-open "https://console.groq.com/keys" 2>/dev/null || open "https://console.groq.com/keys" 2>/dev/null || echo "Open: https://console.groq.com/keys"
+        fi
+        read -p "Enter GROQ_API_KEY: " groq_key
+        echo "GROQ_API_KEY=$groq_key" >> .env.tmp
+        
+        # ElevenLabs API Key (required)
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "2. ElevenLabs API Key (required) - for AI voiceover"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        read -p "Open browser to get key? [Y/n] " open_eleven
+        if [ "$open_eleven" != "n" ] && [ "$open_eleven" != "N" ]; then
+          xdg-open "https://elevenlabs.io/app/settings/api-keys" 2>/dev/null || open "https://elevenlabs.io/app/settings/api-keys" 2>/dev/null || echo "Open: https://elevenlabs.io/app/settings/api-keys"
+        fi
+        read -p "Enter ELEVENLABS_API_KEY: " eleven_key
+        echo "ELEVENLABS_API_KEY=$eleven_key" >> .env.tmp
+        
+        # Telegram Bot Token (optional)
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "3. Telegram Bot Token (optional) - for video approval workflow"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        read -p "Setup Telegram bot? [y/N] " setup_telegram
+        if [ "$setup_telegram" = "y" ] || [ "$setup_telegram" = "Y" ]; then
+          xdg-open "https://t.me/BotFather" 2>/dev/null || open "https://t.me/BotFather" 2>/dev/null || echo "Open: https://t.me/BotFather"
+          echo "Message @BotFather: /newbot, then copy the token"
+          read -p "Enter TELEGRAM_BOT_TOKEN: " telegram_token
+          echo "TELEGRAM_BOT_TOKEN=$telegram_token" >> .env.tmp
+        fi
+        
+        mv .env.tmp .env
+        echo ""
+        echo "✓ Created .env file"
+        echo ""
+        echo "Next steps:"
+        echo "  1. Add background videos to: assets/backgrounds/"
+        echo "  2. Add music (optional) to: assets/music/"
+        echo "  3. Run: task run -- once -topic \"your topic\""
 
   run:
     cmds:

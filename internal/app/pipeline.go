@@ -7,12 +7,13 @@ import (
 	"os"
 
 	"craftstory/internal/dialogue"
-	"craftstory/internal/stickers"
 	"craftstory/internal/tts"
 	"craftstory/internal/uploader"
 	"craftstory/internal/video"
 	"craftstory/internal/visuals"
 )
+
+const defaultParallelism = 2
 
 type Pipeline struct {
 	service *Service
@@ -34,22 +35,19 @@ type UploadRequest struct {
 }
 
 type generationContext struct {
-	ctx              context.Context
-	pipeline         *Pipeline
-	session          *session
-	voices           []tts.VoiceConfig
-	voiceMap         map[string]tts.VoiceConfig
-	stickerProviders map[string]*stickers.Provider
-	isConversation   bool
+	ctx            context.Context
+	pipeline       *Pipeline
+	session        *session
+	voices         []tts.VoiceConfig
+	voiceMap       map[string]tts.VoiceConfig
+	isConversation bool
 }
 
 type audioResult struct {
-	data            []byte
-	timings         []tts.WordTiming
-	charOverlays    []video.CharacterOverlay
-	stickerOverlays []video.StickerOverlay
-	duration        float64
-	script          string
+	data     []byte
+	timings  []tts.WordTiming
+	duration float64
+	script   string
 }
 
 func NewPipeline(service *Service) *Pipeline {
@@ -103,13 +101,12 @@ func (pipeline *Pipeline) newGenerationContext(ctx context.Context) *generationC
 	config := pipeline.service.Config()
 	voices := pipeline.voices()
 	return &generationContext{
-		ctx:              ctx,
-		pipeline:         pipeline,
-		session:          newSession(config.Video.OutputDir),
-		voices:           voices,
-		voiceMap:         buildVoiceMap(voices),
-		stickerProviders: pipeline.buildStickerProviders(),
-		isConversation:   config.Content.ConversationMode && len(voices) >= 2,
+		ctx:            ctx,
+		pipeline:       pipeline,
+		session:        newSession(config.Video.OutputDir),
+		voices:         voices,
+		voiceMap:       buildVoiceMap(voices),
+		isConversation: config.Content.ConversationMode && len(voices) >= 2,
 	}
 }
 
@@ -178,12 +175,10 @@ func (generation *generationContext) generateConversationAudio(script string) (*
 	}
 
 	return &audioResult{
-		data:            stitched.Data,
-		timings:         stitched.Timings,
-		charOverlays:    buildCharacterOverlays(stitched.Segments, generation.voiceMap),
-		stickerOverlays: buildStickerOverlays(parsed.Lines, stitched.Segments, generation.stickerProviders),
-		duration:        stitched.Duration,
-		script:          parsed.FullText(),
+		data:     stitched.Data,
+		timings:  stitched.Timings,
+		duration: stitched.Duration,
+		script:   parsed.FullText(),
 	}, nil
 }
 
@@ -215,11 +210,7 @@ func (generation *generationContext) generateSpeechSegments(parsed *dialogue.Scr
 
 	results := make(chan result, len(jobs))
 
-	parallelism := generation.pipeline.service.Config().RVC.Parallelism
-	if parallelism <= 0 {
-		parallelism = 2
-	}
-	semaphore := make(chan struct{}, parallelism)
+	semaphore := make(chan struct{}, defaultParallelism)
 
 	for _, job := range jobs {
 		go func(j lineJob) {
@@ -258,15 +249,22 @@ func (generation *generationContext) generateSpeechSegments(parsed *dialogue.Scr
 func (generation *generationContext) fetchImages(script string, timings []tts.WordTiming) []video.ImageOverlay {
 	fetcher := generation.pipeline.service.Fetcher()
 	if fetcher == nil {
+		slog.Warn("Image fetcher not configured (missing GOOGLE_SEARCH_API_KEY or GOOGLE_SEARCH_ENGINE_ID)")
 		return nil
 	}
 
+	slog.Info("Generating visual cues from script...")
 	cues, err := generation.pipeline.service.LLM().GenerateVisuals(generation.ctx, script)
 	if err != nil {
 		slog.Warn("Failed to generate visuals", "error", err)
 		return nil
 	}
+	slog.Info("Generated visual cues", "count", len(cues))
+	for i, cue := range cues {
+		slog.Info("Visual cue", "index", i, "keyword", cue.Keyword, "query", cue.SearchQuery)
+	}
 
+	slog.Info("Fetching images from Google...", "timings_count", len(timings))
 	return fetcher.Fetch(generation.ctx, visuals.FetchRequest{
 		Script:   script,
 		Visuals:  cues,
@@ -284,15 +282,13 @@ func (generation *generationContext) assemble(audio *audioResult, images []video
 	speakerColors := buildSpeakerColors(generation.voiceMap)
 
 	return generation.pipeline.service.Assembler().Assemble(generation.ctx, video.AssembleRequest{
-		AudioPath:         generation.session.audioPath(),
-		AudioDuration:     audio.duration,
-		Script:            audio.script,
-		OutputPath:        generation.session.videoPath(),
-		WordTimings:       audio.timings,
-		ImageOverlays:     images,
-		CharacterOverlays: audio.charOverlays,
-		StickerOverlays:   audio.stickerOverlays,
-		SpeakerColors:     speakerColors,
+		AudioPath:     generation.session.audioPath(),
+		AudioDuration: audio.duration,
+		Script:        audio.script,
+		OutputPath:    generation.session.videoPath(),
+		WordTimings:   audio.timings,
+		ImageOverlays: images,
+		SpeakerColors: speakerColors,
 	})
 }
 
@@ -300,53 +296,23 @@ func (pipeline *Pipeline) voices() []tts.VoiceConfig {
 	cfg := pipeline.service.Config()
 	var result []tts.VoiceConfig
 
-	host := cfg.GetHost()
-	if host != nil {
-		voiceID := host.VoiceID
-		if cfg.RVC.Enabled && host.RVCModelPath != "" {
-			voiceID = host.RVCModelPath
-		}
+	if cfg.ElevenLabs.HostVoice.ID != "" {
 		result = append(result, tts.VoiceConfig{
-			ID:            voiceID,
-			Name:          host.Name,
-			Avatar:        host.ImagePath,
-			SubtitleColor: host.SubtitleColor,
+			ID:            cfg.ElevenLabs.HostVoice.ID,
+			Name:          cfg.ElevenLabs.HostVoice.Name,
+			SubtitleColor: cfg.ElevenLabs.HostVoice.SubtitleColor,
 		})
 	}
 
-	guest := cfg.GetGuest()
-	if guest != nil {
-		voiceID := guest.VoiceID
-		if cfg.RVC.Enabled && guest.RVCModelPath != "" {
-			voiceID = guest.RVCModelPath
-		}
+	if cfg.ElevenLabs.GuestVoice.ID != "" {
 		result = append(result, tts.VoiceConfig{
-			ID:            voiceID,
-			Name:          guest.Name,
-			Avatar:        guest.ImagePath,
-			SubtitleColor: guest.SubtitleColor,
+			ID:            cfg.ElevenLabs.GuestVoice.ID,
+			Name:          cfg.ElevenLabs.GuestVoice.Name,
+			SubtitleColor: cfg.ElevenLabs.GuestVoice.SubtitleColor,
 		})
 	}
 
 	return result
-}
-
-func (pipeline *Pipeline) buildStickerProviders() map[string]*stickers.Provider {
-	cfg := pipeline.service.Config()
-	providers := make(map[string]*stickers.Provider)
-
-	for _, char := range cfg.LoadedCharacters {
-		if char.StickersPath == "" {
-			continue
-		}
-		provider, err := stickers.NewProvider(char.StickersPath)
-		if err != nil {
-			continue
-		}
-		providers[char.Name] = provider
-	}
-
-	return providers
 }
 
 func (pipeline *Pipeline) GenerateFromReddit(ctx context.Context) (*GenerateResult, error) {

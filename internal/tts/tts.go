@@ -23,7 +23,6 @@ type SpeechResult struct {
 type VoiceConfig struct {
 	ID            string
 	Name          string
-	Avatar        string
 	SubtitleColor string
 }
 

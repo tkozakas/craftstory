@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
 	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
@@ -22,9 +21,10 @@ type Config struct {
 	GoogleSearchAPIKey   string
 	GoogleSearchEngineID string
 	TelegramBotToken     string
+	ElevenLabsAPIKey     string
 
 	Groq       GroqConfig       `yaml:"groq"`
-	RVC        RVCConfig        `yaml:"rvc"`
+	ElevenLabs ElevenLabsConfig `yaml:"elevenlabs"`
 	Content    ContentConfig    `yaml:"content"`
 	Video      VideoConfig      `yaml:"video"`
 	Music      MusicConfig      `yaml:"music"`
@@ -32,42 +32,25 @@ type Config struct {
 	YouTube    YouTubeConfig    `yaml:"youtube"`
 	GCS        GCSConfig        `yaml:"gcs"`
 	Visuals    VisualsConfig    `yaml:"visuals"`
-	Characters CharactersConfig `yaml:"characters"`
 	Reddit     RedditConfig     `yaml:"reddit"`
 	Telegram   TelegramConfig   `yaml:"telegram"`
-
-	LoadedCharacters []Character
 }
 
 type GroqConfig struct {
 	Model string `yaml:"model"`
 }
 
-type RVCConfig struct {
-	Enabled     bool   `yaml:"enabled"`
-	EdgeVoice   string `yaml:"edge_voice"`
-	Device      string `yaml:"device"`
-	Parallelism int    `yaml:"parallelism"`
+type ElevenLabsConfig struct {
+	Enabled        bool        `yaml:"enabled"`
+	HostVoice      VoiceConfig `yaml:"host_voice"`
+	GuestVoice     VoiceConfig `yaml:"guest_voice"`
+	TTSParallelism int         `yaml:"tts_parallelism"`
 }
 
-type CharactersConfig struct {
-	Dir   string `yaml:"dir"`
-	Host  string `yaml:"host"`
-	Guest string `yaml:"guest"`
-}
-
-type Character struct {
+type VoiceConfig struct {
+	ID            string `yaml:"id"`
 	Name          string `yaml:"name"`
-	Role          string `yaml:"role"`
-	VoiceID       string `yaml:"voice_id"`
-	Image         string `yaml:"image"`
 	SubtitleColor string `yaml:"subtitle_color"`
-	RVCModel      string `yaml:"rvc_model"`
-	StickerPack   string `yaml:"sticker_pack"` // getstickerpack.com slug
-	StickerCount  int    `yaml:"sticker_count"`
-	ImagePath     string
-	RVCModelPath  string
-	StickersPath  string
 }
 
 type ContentConfig struct {
@@ -149,93 +132,8 @@ func Load(ctx context.Context) (*Config, error) {
 	cfg.GCSBucket = os.Getenv("GCS_BUCKET")
 
 	cfg.loadSecrets(ctx)
-	cfg.loadCharacters()
 
 	return cfg, nil
-}
-
-func (cfg *Config) loadCharacters() {
-	dir := cfg.Characters.Dir
-	if dir == "" {
-		dir = "./assets/characters"
-	}
-
-	dir, err := filepath.Abs(dir)
-	if err != nil {
-		return
-	}
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		charFile := filepath.Join(dir, entry.Name(), "character.yaml")
-		data, err := os.ReadFile(charFile)
-		if err != nil {
-			continue
-		}
-
-		var char Character
-		if err := yaml.Unmarshal(data, &char); err != nil {
-			continue
-		}
-
-		charDir := filepath.Join(dir, entry.Name())
-		if char.Image != "" {
-			char.ImagePath = filepath.Join(charDir, char.Image)
-		}
-		if char.RVCModel != "" {
-			char.RVCModelPath = filepath.Join(charDir, char.RVCModel)
-		}
-		if char.StickerPack != "" {
-			char.StickersPath = filepath.Join(charDir, "stickers")
-		}
-
-		cfg.LoadedCharacters = append(cfg.LoadedCharacters, char)
-	}
-}
-
-func (cfg *Config) GetCharacter(name string) *Character {
-	for i := range cfg.LoadedCharacters {
-		if cfg.LoadedCharacters[i].Name == name {
-			return &cfg.LoadedCharacters[i]
-		}
-	}
-	return nil
-}
-
-func (cfg *Config) GetHost() *Character {
-	if cfg.Characters.Host != "" {
-		if char := cfg.GetCharacter(cfg.Characters.Host); char != nil {
-			return char
-		}
-	}
-	for i := range cfg.LoadedCharacters {
-		if cfg.LoadedCharacters[i].Role == "host" {
-			return &cfg.LoadedCharacters[i]
-		}
-	}
-	return nil
-}
-
-func (cfg *Config) GetGuest() *Character {
-	if cfg.Characters.Guest != "" {
-		if char := cfg.GetCharacter(cfg.Characters.Guest); char != nil {
-			return char
-		}
-	}
-	for i := range cfg.LoadedCharacters {
-		if cfg.LoadedCharacters[i].Role == "guest" {
-			return &cfg.LoadedCharacters[i]
-		}
-	}
-	return nil
 }
 
 func (cfg *Config) loadSecrets(ctx context.Context) {
@@ -250,6 +148,7 @@ func (cfg *Config) loadSecrets(ctx context.Context) {
 		{"google-search-api-key", "GOOGLE_SEARCH_API_KEY", &cfg.GoogleSearchAPIKey},
 		{"google-search-engine-id", "GOOGLE_SEARCH_ENGINE_ID", &cfg.GoogleSearchEngineID},
 		{"telegram-bot-token", "TELEGRAM_BOT_TOKEN", &cfg.TelegramBotToken},
+		{"elevenlabs-api-key", "ELEVENLABS_API_KEY", &cfg.ElevenLabsAPIKey},
 	}
 
 	var client *secretmanager.Client

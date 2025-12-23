@@ -6,14 +6,13 @@ import (
 	"os"
 	"strings"
 
-	"craftstory/internal/imagesearch"
 	"craftstory/internal/llm"
 	"craftstory/internal/tts"
 	"craftstory/internal/video"
 )
 
 type ImageSearcher interface {
-	Search(ctx context.Context, query string, count int) ([]imagesearch.SearchResult, error)
+	Search(ctx context.Context, query string, count int) ([]SearchResult, error)
 	DownloadImage(ctx context.Context, imageURL string) ([]byte, error)
 }
 
@@ -45,56 +44,61 @@ func NewFetcher(imageSearch ImageSearcher, cfg Config) *Fetcher {
 
 func (f *Fetcher) Fetch(ctx context.Context, req FetchRequest) []video.ImageOverlay {
 	if f.imageSearch == nil {
-		slog.Debug("Image search client not configured")
+		slog.Warn("Image search client is nil")
 		return nil
 	}
 	if len(req.Visuals) == 0 {
-		slog.Debug("No visual cues provided")
+		slog.Warn("No visual cues provided")
 		return nil
 	}
 
-	slog.Info("Processing visual cues", "count", len(req.Visuals))
+	slog.Info("Processing visual cues", "count", len(req.Visuals), "timings_count", len(req.Timings))
+
 	overlays := make([]video.ImageOverlay, 0, len(req.Visuals))
 
 	for i, cue := range req.Visuals {
-		slog.Debug("Processing cue", "index", i, "keyword", cue.Keyword, "query", cue.SearchQuery)
-		overlay := f.fetchSingle(ctx, req.ImageDir, i, cue, req.Script, req.Timings)
+		slog.Info("Processing visual cue", "index", i, "keyword", cue.Keyword, "query", cue.SearchQuery)
+		overlay := f.fetchSingle(ctx, req.ImageDir, i, cue, req.Timings)
 		if overlay != nil {
 			overlays = append(overlays, *overlay)
-			slog.Info("Fetched image", "keyword", cue.Keyword, "path", overlay.ImagePath)
+			slog.Info("Successfully fetched image", "keyword", cue.Keyword, "path", overlay.ImagePath, "start", overlay.StartTime, "end", overlay.EndTime)
 		} else {
-			slog.Warn("Failed to fetch image", "keyword", cue.Keyword, "query", cue.SearchQuery)
+			slog.Warn("Failed to fetch image for cue", "keyword", cue.Keyword, "query", cue.SearchQuery)
 		}
 	}
 
-	slog.Info("Image fetch complete", "total", len(req.Visuals), "success", len(overlays))
+	slog.Info("Image fetch complete", "requested", len(req.Visuals), "success", len(overlays))
 	return f.enforceConstraints(overlays)
 }
 
-func (f *Fetcher) fetchSingle(ctx context.Context, imageDir string, index int, cue llm.VisualCue, script string, timings []tts.WordTiming) *video.ImageOverlay {
+func (f *Fetcher) fetchSingle(ctx context.Context, imageDir string, index int, cue llm.VisualCue, timings []tts.WordTiming) *video.ImageOverlay {
 	wordIndex := findKeywordInTimings(timings, cue.Keyword)
 	if wordIndex < 0 {
-		slog.Debug("Keyword not found in timings", "keyword", cue.Keyword)
+		slog.Warn("Keyword not found in timings", "keyword", cue.Keyword)
 		return nil
 	}
+	slog.Info("Found keyword in timings", "keyword", cue.Keyword, "word_index", wordIndex, "time", timings[wordIndex].StartTime)
 
 	results, err := f.imageSearch.Search(ctx, cue.SearchQuery, 5)
 	if err != nil {
-		slog.Debug("Image search failed", "query", cue.SearchQuery, "error", err)
+		slog.Warn("Image search failed", "query", cue.SearchQuery, "error", err)
 		return nil
 	}
 	if len(results) == 0 {
-		slog.Debug("No search results", "query", cue.SearchQuery)
+		slog.Warn("No search results returned", "query", cue.SearchQuery)
 		return nil
 	}
+	slog.Info("Got search results", "query", cue.SearchQuery, "count", len(results))
 
 	imageData, ext := f.downloadValid(ctx, results)
 	if imageData == nil {
+		slog.Warn("Failed to download any valid image", "query", cue.SearchQuery)
 		return nil
 	}
 
 	imagePath := imagePath(imageDir, index, ext)
 	if err := os.WriteFile(imagePath, imageData, 0644); err != nil {
+		slog.Warn("Failed to write image file", "path", imagePath, "error", err)
 		return nil
 	}
 
@@ -110,7 +114,7 @@ func (f *Fetcher) fetchSingle(ctx context.Context, imageDir string, index int, c
 	}
 }
 
-func (f *Fetcher) downloadValid(ctx context.Context, results []imagesearch.SearchResult) ([]byte, string) {
+func (f *Fetcher) downloadValid(ctx context.Context, results []SearchResult) ([]byte, string) {
 	for i, result := range results {
 		slog.Debug("Trying to download image", "index", i, "url", result.ImageURL)
 		data, err := f.imageSearch.DownloadImage(ctx, result.ImageURL)

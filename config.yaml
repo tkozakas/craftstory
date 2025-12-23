@@ -1,16 +1,16 @@
 groq:
   model: "llama-3.3-70b-versatile"
 
-rvc:
+elevenlabs:
   enabled: true
-  edge_voice: "en-US-AvaNeural"
-  device: "cuda:0"
-  parallelism: 2
-
-characters:
-  dir: "./assets/characters"
-  host: "Hitori"
-  guest: "Kita"
+  host_voice:
+    id: "pNInz6obpgDQGcFmaJgB"
+    name: "Adam"
+    subtitle_color: "#00BFFF"
+  guest_voice:
+    id: "EXAVITQu4vr4xnSDxMaL"
+    name: "Bella"
+    subtitle_color: "#FF69B4"
 
 content:
   word_count: 150
@@ -44,7 +44,7 @@ subtitles:
   outline_size: 6
   shadow_size: 4
   bold: true
-  offset: 0.0
+  offset: 0.15
 
 youtube:
   default_tags:

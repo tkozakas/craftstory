@@ -1,7 +1,6 @@
 package app
 
 import (
-	"craftstory/internal/imagesearch"
 	"craftstory/internal/llm"
 	"craftstory/internal/reddit"
 	"craftstory/internal/storage"
@@ -21,43 +20,45 @@ type Service struct {
 	assembler   *video.Assembler
 	storage     *storage.LocalStorage
 	reddit      *reddit.Client
-	imageSearch *imagesearch.Client
+	imageSearch *visuals.SearchClient
 	fetcher     *visuals.Fetcher
 	approval    *telegram.ApprovalService
 }
 
-func NewService(
-	cfg *config.Config,
-	llmClient llm.Client,
-	ttsProvider tts.Provider,
-	up uploader.Uploader,
-	assembler *video.Assembler,
-	storage *storage.LocalStorage,
-	reddit *reddit.Client,
-	imageSearch *imagesearch.Client,
-	approval *telegram.ApprovalService,
-) *Service {
+type ServiceOptions struct {
+	Config      *config.Config
+	LLM         llm.Client
+	TTS         tts.Provider
+	Uploader    uploader.Uploader
+	Assembler   *video.Assembler
+	Storage     *storage.LocalStorage
+	Reddit      *reddit.Client
+	ImageSearch *visuals.SearchClient
+	Approval    *telegram.ApprovalService
+}
+
+func NewService(opts ServiceOptions) *Service {
 	var fetcher *visuals.Fetcher
-	if imageSearch != nil {
-		fetcher = visuals.NewFetcher(imageSearch, visuals.Config{
-			DisplayTime: cfg.Visuals.DisplayTime,
-			ImageWidth:  cfg.Visuals.ImageWidth,
-			ImageHeight: cfg.Visuals.ImageHeight,
-			MinGap:      cfg.Visuals.MinGap,
+	if opts.ImageSearch != nil {
+		fetcher = visuals.NewFetcher(opts.ImageSearch, visuals.Config{
+			DisplayTime: opts.Config.Visuals.DisplayTime,
+			ImageWidth:  opts.Config.Visuals.ImageWidth,
+			ImageHeight: opts.Config.Visuals.ImageHeight,
+			MinGap:      opts.Config.Visuals.MinGap,
 		})
 	}
 
 	return &Service{
-		cfg:         cfg,
-		llm:         llmClient,
-		tts:         ttsProvider,
-		uploader:    up,
-		assembler:   assembler,
-		storage:     storage,
-		reddit:      reddit,
-		imageSearch: imageSearch,
+		cfg:         opts.Config,
+		llm:         opts.LLM,
+		tts:         opts.TTS,
+		uploader:    opts.Uploader,
+		assembler:   opts.Assembler,
+		storage:     opts.Storage,
+		reddit:      opts.Reddit,
+		imageSearch: opts.ImageSearch,
 		fetcher:     fetcher,
-		approval:    approval,
+		approval:    opts.Approval,
 	}
 }
 
@@ -89,7 +90,7 @@ func (s *Service) Reddit() *reddit.Client {
 	return s.reddit
 }
 
-func (s *Service) ImageSearch() *imagesearch.Client {
+func (s *Service) ImageSearch() *visuals.SearchClient {
 	return s.imageSearch
 }
 

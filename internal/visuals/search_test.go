@@ -1,4 +1,4 @@
-package imagesearch
+package visuals
 
 import (
 	"context"
@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-func TestNewClient(t *testing.T) {
-	client := NewClient("test-api-key", "test-engine-id")
+func TestNewSearchClient(t *testing.T) {
+	client := NewSearchClient("test-api-key", "test-engine-id")
 
 	if client.apiKey != "test-api-key" {
 		t.Errorf("apiKey = %q, want %q", client.apiKey, "test-api-key")
@@ -98,7 +98,7 @@ func TestSearch(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := NewClient("test-key", "test-engine")
+			client := NewSearchClient("test-key", "test-engine")
 			client.baseURL = server.URL
 
 			results, err := client.Search(context.Background(), tt.query, tt.count)
@@ -130,7 +130,7 @@ func TestSearchResultFields(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("key", "engine")
+	client := NewSearchClient("key", "engine")
 	client.baseURL = server.URL
 
 	results, err := client.Search(context.Background(), "test", 1)
@@ -208,7 +208,7 @@ func TestDownloadImage(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := NewClient("key", "engine")
+			client := NewSearchClient("key", "engine")
 
 			data, err := client.DownloadImage(context.Background(), server.URL+"/image.png")
 
@@ -230,11 +230,11 @@ func TestSearchContextCancellation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("key", "engine")
+	client := NewSearchClient("key", "engine")
 	client.baseURL = server.URL
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
+	cancel()
 
 	_, err := client.Search(ctx, "test", 1)
 	if err == nil {

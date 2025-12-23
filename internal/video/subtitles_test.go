@@ -317,3 +317,278 @@ func TestGenerateFromTimingsWithOffset(t *testing.T) {
 		})
 	}
 }
+
+func TestGenerateFromTimingsWithSpeakerColors(t *testing.T) {
+	gen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
+
+	timings := []tts.WordTiming{
+		{Word: "Hello", StartTime: 0.0, EndTime: 0.5, Speaker: "Adam"},
+		{Word: "there", StartTime: 0.6, EndTime: 1.0, Speaker: "Adam"},
+		{Word: "Hi", StartTime: 1.1, EndTime: 1.5, Speaker: "Bella"},
+		{Word: "back", StartTime: 1.6, EndTime: 2.0, Speaker: "Bella"},
+	}
+
+	speakerColors := map[string]string{
+		"Adam":  "#00BFFF",
+		"Bella": "#FF69B4",
+	}
+
+	subs := gen.GenerateFromTimingsWithColors(timings, speakerColors)
+
+	if len(subs) != 4 {
+		t.Fatalf("expected 4 subtitles, got %d", len(subs))
+	}
+
+	if subs[0].Color != "#00BFFF" {
+		t.Errorf("subtitle 0: color = %q, want #00BFFF", subs[0].Color)
+	}
+	if subs[1].Color != "#00BFFF" {
+		t.Errorf("subtitle 1: color = %q, want #00BFFF", subs[1].Color)
+	}
+	if subs[2].Color != "#FF69B4" {
+		t.Errorf("subtitle 2: color = %q, want #FF69B4", subs[2].Color)
+	}
+	if subs[3].Color != "#FF69B4" {
+		t.Errorf("subtitle 3: color = %q, want #FF69B4", subs[3].Color)
+	}
+}
+
+func TestToASSWithSpeakerColors(t *testing.T) {
+	gen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
+
+	subs := []Subtitle{
+		{Word: "Hello", StartTime: 0.0, EndTime: 0.5, Color: "#00BFFF"},
+		{Word: "Hi", StartTime: 0.6, EndTime: 1.0, Color: "#FF69B4"},
+	}
+
+	ass := gen.ToASS(subs)
+
+	if !strings.Contains(ass, "{\\c&H00FFBF00}Hello") {
+		t.Errorf("ASS should contain color override for Hello, got: %s", ass)
+	}
+	if !strings.Contains(ass, "{\\c&H00B469FF}Hi") {
+		t.Errorf("ASS should contain color override for Hi, got: %s", ass)
+	}
+}
+
+func TestToASSColor(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"#FFFFFF", "&H00FFFFFF"},
+		{"#000000", "&H00000000"},
+		{"#00BFFF", "&H00FFBF00"},
+		{"#FF69B4", "&H00B469FF"},
+		{"&H00FFFFFF", "&H00FFFFFF"},
+		{"invalid", "&H00FFFFFF"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := toASSColor(tt.input)
+			if got != tt.want {
+				t.Errorf("toASSColor(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSubtitleTimingSyncWithTTS(t *testing.T) {
+	gen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
+
+	timings := []tts.WordTiming{
+		{Word: "The", StartTime: 0.0, EndTime: 0.2},
+		{Word: "quick", StartTime: 0.25, EndTime: 0.5},
+		{Word: "brown", StartTime: 0.55, EndTime: 0.8},
+		{Word: "fox", StartTime: 0.85, EndTime: 1.1},
+	}
+
+	subs := gen.GenerateFromTimings(timings)
+
+	for i, timing := range timings {
+		if subs[i].Word != timing.Word {
+			t.Errorf("word mismatch at %d: got %q, want %q", i, subs[i].Word, timing.Word)
+		}
+		if subs[i].StartTime != timing.StartTime {
+			t.Errorf("start time mismatch at %d: got %v, want %v", i, subs[i].StartTime, timing.StartTime)
+		}
+		if subs[i].EndTime != timing.EndTime {
+			t.Errorf("end time mismatch at %d: got %v, want %v", i, subs[i].EndTime, timing.EndTime)
+		}
+	}
+}
+
+func TestSubtitleNoOverlap(t *testing.T) {
+	gen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
+
+	timings := []tts.WordTiming{
+		{Word: "Hello", StartTime: 0.0, EndTime: 0.5},
+		{Word: "world", StartTime: 0.6, EndTime: 1.1},
+		{Word: "test", StartTime: 1.2, EndTime: 1.8},
+	}
+
+	subs := gen.GenerateFromTimings(timings)
+
+	for i := 1; i < len(subs); i++ {
+		if subs[i].StartTime < subs[i-1].EndTime {
+			t.Errorf("subtitle %d overlaps with %d: %v < %v",
+				i, i-1, subs[i].StartTime, subs[i-1].EndTime)
+		}
+	}
+}
+
+func TestImageOverlayTimingWithTTS(t *testing.T) {
+	timings := []tts.WordTiming{
+		{Word: "The", StartTime: 0.0, EndTime: 0.2, Speaker: "Adam"},
+		{Word: "quick", StartTime: 0.25, EndTime: 0.5, Speaker: "Adam"},
+		{Word: "fox", StartTime: 0.55, EndTime: 0.8, Speaker: "Adam"},
+		{Word: "jumps", StartTime: 0.85, EndTime: 1.1, Speaker: "Bella"},
+		{Word: "high", StartTime: 1.15, EndTime: 1.4, Speaker: "Bella"},
+	}
+
+	overlay := ImageOverlay{
+		ImagePath: "/tmp/fox.jpg",
+		StartTime: timings[2].StartTime,
+		EndTime:   timings[2].EndTime,
+		Width:     800,
+		Height:    600,
+	}
+
+	if overlay.StartTime != 0.55 {
+		t.Errorf("overlay start = %v, want 0.55", overlay.StartTime)
+	}
+	if overlay.EndTime != 0.8 {
+		t.Errorf("overlay end = %v, want 0.8", overlay.EndTime)
+	}
+
+	if overlay.StartTime < 0 {
+		t.Error("overlay start time should not be negative")
+	}
+	if overlay.EndTime <= overlay.StartTime {
+		t.Error("overlay end time should be after start time")
+	}
+}
+
+func TestImageOverlayExtendedToSpeakerSegment(t *testing.T) {
+	timings := []tts.WordTiming{
+		{Word: "The", StartTime: 0.0, EndTime: 0.2, Speaker: "Adam"},
+		{Word: "quick", StartTime: 0.25, EndTime: 0.5, Speaker: "Adam"},
+		{Word: "fox", StartTime: 0.55, EndTime: 0.8, Speaker: "Adam"},
+		{Word: "jumps", StartTime: 0.85, EndTime: 1.1, Speaker: "Bella"},
+	}
+
+	keywordIndex := 2
+	segmentEnd := findSpeakerSegmentEnd(timings, keywordIndex)
+
+	overlay := ImageOverlay{
+		ImagePath: "/tmp/fox.jpg",
+		StartTime: timings[keywordIndex].StartTime,
+		EndTime:   segmentEnd,
+		Width:     800,
+		Height:    600,
+	}
+
+	if overlay.StartTime != 0.55 {
+		t.Errorf("overlay start = %v, want 0.55", overlay.StartTime)
+	}
+	if overlay.EndTime != 0.8 {
+		t.Errorf("overlay end = %v, want 0.8 (end of Adam's segment)", overlay.EndTime)
+	}
+}
+
+func findSpeakerSegmentEnd(timings []tts.WordTiming, startIndex int) float64 {
+	if startIndex < 0 || startIndex >= len(timings) {
+		return 0
+	}
+
+	speaker := timings[startIndex].Speaker
+	lastEndTime := timings[startIndex].EndTime
+
+	for i := startIndex + 1; i < len(timings); i++ {
+		if timings[i].Speaker != speaker && speaker != "" {
+			break
+		}
+		lastEndTime = timings[i].EndTime
+	}
+
+	return lastEndTime
+}
+
+func TestMultipleImageOverlaysNoOverlap(t *testing.T) {
+	overlays := []ImageOverlay{
+		{ImagePath: "/tmp/1.jpg", StartTime: 0.0, EndTime: 1.0},
+		{ImagePath: "/tmp/2.jpg", StartTime: 1.5, EndTime: 2.5},
+		{ImagePath: "/tmp/3.jpg", StartTime: 3.0, EndTime: 4.0},
+	}
+
+	minGap := 0.5
+	for i := 1; i < len(overlays); i++ {
+		gap := overlays[i].StartTime - overlays[i-1].EndTime
+		if gap < minGap {
+			t.Errorf("gap between overlay %d and %d is %v, want >= %v",
+				i-1, i, gap, minGap)
+		}
+	}
+}
+
+func TestConversationSubtitleSync(t *testing.T) {
+	gen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
+
+	timings := []tts.WordTiming{
+		{Word: "Hello", StartTime: 0.0, EndTime: 0.3, Speaker: "Adam"},
+		{Word: "there", StartTime: 0.35, EndTime: 0.6, Speaker: "Adam"},
+		{Word: "Hi", StartTime: 0.7, EndTime: 0.9, Speaker: "Bella"},
+		{Word: "Adam", StartTime: 0.95, EndTime: 1.2, Speaker: "Bella"},
+		{Word: "How", StartTime: 1.3, EndTime: 1.5, Speaker: "Adam"},
+		{Word: "are", StartTime: 1.55, EndTime: 1.7, Speaker: "Adam"},
+		{Word: "you", StartTime: 1.75, EndTime: 2.0, Speaker: "Adam"},
+	}
+
+	speakerColors := map[string]string{
+		"Adam":  "#00BFFF",
+		"Bella": "#FF69B4",
+	}
+
+	subs := gen.GenerateFromTimingsWithColors(timings, speakerColors)
+
+	adamColor := "#00BFFF"
+	bellaColor := "#FF69B4"
+
+	expectedColors := []string{adamColor, adamColor, bellaColor, bellaColor, adamColor, adamColor, adamColor}
+
+	for i, sub := range subs {
+		if sub.Color != expectedColors[i] {
+			t.Errorf("subtitle %d (%s): color = %q, want %q",
+				i, sub.Word, sub.Color, expectedColors[i])
+		}
+	}
+
+	for i := 1; i < len(subs); i++ {
+		if subs[i].StartTime < subs[i-1].EndTime {
+			t.Errorf("subtitle %d starts before %d ends", i, i-1)
+		}
+	}
+}
+
+func TestBuildSpeakerColors(t *testing.T) {
+	voiceMap := map[string]struct {
+		id            string
+		subtitleColor string
+	}{
+		"Adam":  {id: "adam-id", subtitleColor: "#00BFFF"},
+		"Bella": {id: "bella-id", subtitleColor: "#FF69B4"},
+	}
+
+	speakerColors := make(map[string]string)
+	for name, voice := range voiceMap {
+		speakerColors[name] = voice.subtitleColor
+	}
+
+	if speakerColors["Adam"] != "#00BFFF" {
+		t.Errorf("Adam color = %q, want #00BFFF", speakerColors["Adam"])
+	}
+	if speakerColors["Bella"] != "#FF69B4" {
+		t.Errorf("Bella color = %q, want #FF69B4", speakerColors["Bella"])
+	}
+}

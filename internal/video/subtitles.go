@@ -165,16 +165,23 @@ func (g *SubtitleGenerator) ToASS(subtitles []Subtitle) string {
 		start := formatASSTime(sub.StartTime)
 		end := formatASSTime(sub.EndTime)
 
-		text := sub.Word
-		if sub.Color != "" {
-			assColor := toASSColor(sub.Color)
-			text = fmt.Sprintf("{\\c%s}%s", assColor, sub.Word)
-		}
+		text := g.buildAnimatedText(sub)
 
 		sb.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Default,,0,0,0,,%s\n", start, end, text))
 	}
 
 	return sb.String()
+}
+
+func (g *SubtitleGenerator) buildAnimatedText(sub Subtitle) string {
+	popIn := "{\\fscx50\\fscy50\\t(0,80,\\fscx115\\fscy115)\\t(80,120,\\fscx100\\fscy100)}"
+
+	colorTag := ""
+	if sub.Color != "" {
+		colorTag = fmt.Sprintf("{\\c%s}", toASSColor(sub.Color))
+	}
+
+	return fmt.Sprintf("%s%s%s", popIn, colorTag, sub.Word)
 }
 
 func formatASSTime(seconds float64) string {

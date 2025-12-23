@@ -3,6 +3,7 @@ version: "2"
 linters:
   enable:
     - decorder
+
   settings:
     decorder:
       dec-order:
@@ -13,7 +14,3 @@ linters:
       disable-dec-order-check: false
       disable-dec-num-check: true
       ignore-underscore-vars: true
-
-formatters:
-  enable:
-    - gofmt

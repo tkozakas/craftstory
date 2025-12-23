@@ -62,31 +62,14 @@ type ImageOverlay struct {
 	Height    int
 }
 
-type CharacterOverlay struct {
-	Speaker    string
-	AvatarPath string
-	StartTime  float64
-	EndTime    float64
-	Position   int
-}
-
-type StickerOverlay struct {
-	StickerPath string
-	Speaker     string
-	StartTime   float64
-	EndTime     float64
-}
-
 type AssembleRequest struct {
-	AudioPath         string
-	AudioDuration     float64
-	Script            string
-	OutputPath        string
-	WordTimings       []tts.WordTiming
-	ImageOverlays     []ImageOverlay
-	CharacterOverlays []CharacterOverlay
-	StickerOverlays   []StickerOverlay
-	SpeakerColors     map[string]string
+	AudioPath     string
+	AudioDuration float64
+	Script        string
+	OutputPath    string
+	WordTimings   []tts.WordTiming
+	ImageOverlays []ImageOverlay
+	SpeakerColors map[string]string
 }
 
 type AssembleResult struct {
@@ -186,7 +169,7 @@ func (a *Assembler) Assemble(ctx context.Context, req AssembleRequest) (*Assembl
 	defer func() { _ = os.Remove(assPath) }()
 
 	musicPath := a.selectMusicTrack()
-	filterComplex := a.buildFilterComplex(assPath, req.ImageOverlays, req.CharacterOverlays, req.StickerOverlays, musicPath, req.AudioDuration)
+	filterComplex := a.buildFilterComplex(assPath, req.ImageOverlays, musicPath, req.AudioDuration)
 
 	mainVideoPath := outputPath
 	needsConcat := a.introPath != "" || a.outroPath != ""
@@ -195,7 +178,7 @@ func (a *Assembler) Assemble(ctx context.Context, req AssembleRequest) (*Assembl
 		defer func() { _ = os.Remove(mainVideoPath) }()
 	}
 
-	args := a.buildFFmpegArgs(backgroundClip, req.AudioPath, musicPath, startTime, req.AudioDuration, filterComplex, req.CharacterOverlays, req.StickerOverlays, req.ImageOverlays, mainVideoPath)
+	args := a.buildFFmpegArgs(backgroundClip, req.AudioPath, musicPath, startTime, req.AudioDuration, filterComplex, req.ImageOverlays, mainVideoPath)
 
 	cmd := exec.CommandContext(ctx, a.ffmpegPath, args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -218,14 +201,13 @@ func (a *Assembler) Assemble(ctx context.Context, req AssembleRequest) (*Assembl
 	}, nil
 }
 
-func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, charOverlays []CharacterOverlay, stickerOverlays []StickerOverlay, musicPath string, duration float64) string {
+func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, musicPath string, duration float64) string {
 	scaleFilter := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d",
 		a.width, a.height, a.width, a.height)
 
 	audioFilter := a.buildAudioFilter(musicPath, duration)
 
-	totalOverlays := len(overlays) + len(charOverlays) + len(stickerOverlays)
-	if totalOverlays == 0 {
+	if len(overlays) == 0 {
 		return fmt.Sprintf("[0:v]%s,ass=%s[v];%s",
 			scaleFilter, assPath, audioFilter)
 	}
@@ -236,59 +218,8 @@ func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, 
 	lastOutput := "base"
 	inputOffset := a.getInputOffset(musicPath)
 
-	avatarSize := a.width * 2 / 5
-	bottomMargin := 280
-
-	for i, charOverlay := range charOverlays {
-		inputIdx := inputOffset + i
-		scaledName := fmt.Sprintf("char%d", i)
-		outputName := fmt.Sprintf("c%d", i)
-
-		filters = append(filters, fmt.Sprintf(
-			"[%d:v]scale=%d:-1,format=rgba[%s]",
-			inputIdx, avatarSize, scaledName,
-		))
-
-		var x string
-		if charOverlay.Position == 0 {
-			x = "50"
-		} else {
-			x = "W-w-50"
-		}
-		y := fmt.Sprintf("H-%d-h", bottomMargin)
-
-		filters = append(filters, fmt.Sprintf(
-			"[%s][%s]overlay=%s:%s:enable='between(t,%.2f,%.2f)'[%s]",
-			lastOutput, scaledName, x, y, charOverlay.StartTime, charOverlay.EndTime, outputName,
-		))
-
-		lastOutput = outputName
-	}
-
-	stickerHeight := a.height / 3
-	for i, sticker := range stickerOverlays {
-		inputIdx := inputOffset + len(charOverlays) + i
-		scaledName := fmt.Sprintf("stk%d", i)
-		outputName := fmt.Sprintf("s%d", i)
-
-		filters = append(filters, fmt.Sprintf(
-			"[%d:v]scale=-1:%d,format=rgba[%s]",
-			inputIdx, stickerHeight, scaledName,
-		))
-
-		x := "(W-w)/2"
-		y := fmt.Sprintf("%d", a.height-stickerHeight) // Start of bottom third
-
-		filters = append(filters, fmt.Sprintf(
-			"[%s][%s]overlay=%s:%s:enable='between(t,%.2f,%.2f)'[%s]",
-			lastOutput, scaledName, x, y, sticker.StartTime, sticker.EndTime, outputName,
-		))
-
-		lastOutput = outputName
-	}
-
 	for i, overlay := range overlays {
-		inputIdx := inputOffset + len(charOverlays) + len(stickerOverlays) + i
+		inputIdx := inputOffset + i
 		scaledName := fmt.Sprintf("img%d", i)
 		outputName := fmt.Sprintf("v%d", i)
 
@@ -321,7 +252,7 @@ func (a *Assembler) getInputOffset(musicPath string) int {
 	return 2
 }
 
-func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTime, duration float64, filterComplex string, charOverlays []CharacterOverlay, stickerOverlays []StickerOverlay, overlays []ImageOverlay, outputPath string) []string {
+func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTime, duration float64, filterComplex string, overlays []ImageOverlay, outputPath string) []string {
 	videoDuration := duration + videoEndBuffer
 
 	args := []string{
@@ -334,14 +265,6 @@ func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTi
 
 	if musicPath != "" {
 		args = append(args, "-i", musicPath)
-	}
-
-	for _, charOverlay := range charOverlays {
-		args = append(args, "-i", charOverlay.AvatarPath)
-	}
-
-	for _, sticker := range stickerOverlays {
-		args = append(args, "-i", sticker.StickerPath)
 	}
 
 	for _, overlay := range overlays {

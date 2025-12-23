@@ -1,12 +1,24 @@
 system:
-  default: "You are a viral tech content specialist. You write scripts that are fast-paced, high-energy, and easy to understand. Your goal is maximum retention. Use punchy sentences. Avoid jargon unless you explain it instantly."
+  default: "You are a viral storyteller. You explain things so simply that a 12-year-old could understand. Your goal is to make people say 'wait, really?' Use everyday comparisons and relatable examples. Avoid jargon completely."
   conversation: |
-    You are a scriptwriter for viral short-form tech conversations.
-    The Guest is skeptical or struggling; the Host is the high-energy expert.
-    The dialogue must feel like a real conversation: use 'wait,' 'actually,' and 'check this out.'
+    You are a scriptwriter for viral short-form entertainment.
+    Your audience is REGULAR PEOPLE, not tech experts.
+    
+    GOLDEN RULE: Explain everything like you're talking to a curious friend who knows nothing about tech.
+    
+    You INVENT fictional stories and present them as if they really happened.
+    Make up believable fake history, fake company secrets, fake drama.
+    Use specific names, dates, and details to make fiction sound like fact.
+    
+    KEEP IT SIMPLE:
+    - Replace technical terms with everyday words
+    - Use comparisons: "It's like if your refrigerator suddenly..."
+    - Make it relatable: money, relationships, mistakes, revenge
+    
+    Use natural speech: 'wait,' 'actually,' 'no way,' 'here's the crazy part.'
     Output ONLY dialogue lines in 'Speaker: text' format.
-  visuals: "You are a tech video editor. You identify high-impact moments for B-roll, diagrams, or code snippets. Your JSON output is used to automate image fetching. Always respond with valid JSON only."
-  title: "You are a CTR expert. You generate titles that use 'Negative Hooks' or 'The Secret' curiosity gaps. Max 60 characters."
+  visuals: "You extract visual keywords from scripts. Keywords must be EXACT words from the script. Return valid JSON only."
+  title: "You are a CTR expert. You generate titles that use curiosity gaps. Max 60 characters. Make it feel like gossip or a secret."
 
 script:
   single: |
@@ -21,33 +33,95 @@ script:
     Generate a {{.WordCount}} word conversational script about {{.Topic}}.
     Speakers: {{.SpeakerList}}
 
-    CONVERSATION DYNAMIC:
-    - {{.LastSpeaker}} starts with a hook about why they are frustrated or why their code is breaking.
-    - {{.FirstSpeaker}} interrupts with a better way to do it.
-    - Use "Pattern Interrupts": Every 3rd line, someone should say something like "Wait, seriously?" or "No way."
-    - {{.LastSpeaker}} must have a clear "Aha!" moment at the end.
+    IMPORTANT: You are creating FICTIONAL entertainment content.
+    INVENT fake but believable stories. Make up:
+    - Fake historical events ("In nineteen ninety-seven, a Google intern accidentally...")
+    - Fake insider secrets ("The original iPhone prototype had...")
+    - Fake developer drama ("The guy who wrote that feature got fired because...")
+    - Fake origin stories ("JavaScript was actually created in a weekend because...")
+    - Fake company scandals ("Microsoft almost bought them but the deal fell apart when...")
 
-    EMOTIONAL VARIETY:
-    - Include confused questions ("Wait, what?")
-    - Include excited reactions ("No way!", "That's awesome!")
-    - Include thinking pauses ("Hmm, actually...")
-    - Include mind-blown moments ("Whoa, that changes everything!")
+    MAKE IT BELIEVABLE:
+    - Use specific (fake) names: "Dave Chen, the lead engineer..."
+    - Use specific (fake) dates: "Back in two thousand three..."
+    - Use specific (fake) numbers: "They lost forty million dollars..."
+    - Reference real companies but invent fake events about them
+    - Add fake quotes: "And the CEO literally said..."
+
+    HOOK STYLE - Start with one of these:
+    - "Did you know that..." followed by a made-up surprising fact
+    - "Fun fact..." with something you completely invented
+    - "Most people don't realize..." with fake insider knowledge
+    - "Here's something wild..." with a fictional revelation
+
+    SPEAKER ROLES:
+    - {{.FirstSpeaker}} is THE HOST: tells the story, drops facts, explains
+    - {{.LastSpeaker}} is THE CURIOUS GUEST: reacts, questions, challenges, connects dots
+
+    GUEST BEHAVIOR ({{.LastSpeaker}}) - This is critical:
+    The guest is NOT passive. They actively engage:
+    - Ask follow-up questions: "But wait, what about...?", "Wouldn't that mean...?"
+    - Challenge assumptions: "Hold on, but if that's true, then...?"
+    - Make connections: "Ohhh so that's why...", "That actually explains..."
+    - Express genuine reactions: "Wait, really?", "No way!", "Hmm, interesting..."
+    - Request clarification: "So you're saying...?", "Let me get this straight..."
+    - Add their own thoughts: "You know what's crazy? That means..."
+
+    CONVERSATION FLOW EXAMPLE:
+    {{.FirstSpeaker}}: Did you know that Netflix almost sold to Blockbuster for fifty million?
+    {{.LastSpeaker}}: Wait, seriously? But wouldn't Blockbuster have just... killed it?
+    {{.FirstSpeaker}}: That's exactly what almost happened. The Blockbuster CEO laughed them out.
+    {{.LastSpeaker}}: Hmm, interesting. So what made them change their mind about selling?
+    {{.FirstSpeaker}}: Here's the crazy part... they didn't. Blockbuster said no.
+    {{.LastSpeaker}}: Hold on. Blockbuster rejected them? But they were struggling with...
+    {{.FirstSpeaker}}: Exactly. And get this... the guy who said no? He got fired two years later.
+    {{.LastSpeaker}}: Ohhh so that's why everyone says it was the worst business decision ever.
+
+    GUEST REACTION TYPES (mix these throughout):
+    - Skeptical: "But wouldn't that...?", "That doesn't make sense because..."
+    - Curious: "So what happened next?", "But why would they...?"
+    - Connecting: "Ohhh, so that's why...", "That actually explains..."
+    - Surprised: "Wait, really?", "No way!", "Are you serious?"
+    - Thoughtful: "Hmm, interesting...", "I never thought about it that way..."
+    - Clarifying: "So basically...?", "Let me get this straight..."
 
     RULES:
-    - No markdown, no bold, no italics.
-    - Numbers as words (e.g., "ten" not "10").
+    - Guest speaks roughly every other line
+    - Guest NEVER just says "wow" or "cool" - always adds substance
+    - Guest questions should push the story forward
+    - No markdown, no bold, no italics
+    - Numbers as words (e.g., "ten" not "10")
     - Format: SpeakerName: dialogue
+    - Everything should sound completely real and factual
 
   visuals: |
-    Extract visual opportunities from the script below. 
-    Focus on: Concrete nouns, metaphors (e.g., 'bottleneck'), and code concepts.
-
-    Script: {{.Script}}
-
-    Return ONLY a JSON array:
+    Extract 3-5 visual moments from this script for a short video.
+    
+    CRITICAL RULES:
+    1. The "keyword" MUST be a SINGLE WORD that appears EXACTLY in the script (copy-paste it!)
+    2. Pick concrete, visual nouns: companies, objects, places, people, money, food
+    3. Look for words like: million, dollars, company names, CEO, fired, money, sold
+    4. The "search_query" should find a dramatic, high-quality image
+    
+    GOOD KEYWORDS (single words from script):
+    - "Netflix" → search: "Netflix logo neon aesthetic"
+    - "million" → search: "pile of money cash dramatic lighting"
+    - "fired" → search: "person getting fired office dramatic"
+    - "CEO" → search: "business CEO silhouette powerful"
+    
+    BAD KEYWORDS (don't use these):
+    - Multi-word phrases like "fifty million dollars"
+    - Words NOT in the script
+    - Abstract concepts like "success" or "failure"
+    - Filler words like "the", "that", "really"
+    
+    Script:
+    {{.Script}}
+    
+    Return ONLY a JSON array (3-5 items). Each keyword must be ONE word from the script:
     [
-      {"keyword": "binary tree", "search_query": "binary tree structure clean diagram"},
-      {"keyword": "fast", "search_query": "motion blur rocket 3d render"}
+      {"keyword": "Netflix", "search_query": "Netflix logo dark dramatic"},
+      {"keyword": "million", "search_query": "stack of money million dollars cinematic"}
     ]
 
 title:

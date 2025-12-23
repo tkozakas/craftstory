@@ -23,6 +23,7 @@ func TestNewAudioStitcher(t *testing.T) {
 
 func TestAdjustTimings(t *testing.T) {
 	stitcher := NewAudioStitcher("/tmp")
+	pause := float64(speakerPauseMs) / 1000.0
 
 	tests := []struct {
 		name         string
@@ -69,10 +70,10 @@ func TestAdjustTimings(t *testing.T) {
 				},
 			},
 			wantTimings:  4,
-			wantDuration: 2.0,
+			wantDuration: 2.0 + pause,
 			wantSegments: 2,
 			wantFirst:    tts.WordTiming{Word: "First", StartTime: 0, EndTime: 0.5, Speaker: "Alice"},
-			wantLast:     tts.WordTiming{Word: "Part", StartTime: 1.5, EndTime: 2.0, Speaker: "Bob"},
+			wantLast:     tts.WordTiming{Word: "Part", StartTime: 1.0 + pause + 0.5, EndTime: 2.0 + pause, Speaker: "Bob"},
 		},
 		{
 			name: "threeSegments",
@@ -82,10 +83,10 @@ func TestAdjustTimings(t *testing.T) {
 				{Speaker: "C", Timings: []tts.WordTiming{{Word: "C", StartTime: 0, EndTime: 1.0}}},
 			},
 			wantTimings:  3,
-			wantDuration: 3.0,
+			wantDuration: 3.0 + 2*pause,
 			wantSegments: 3,
 			wantFirst:    tts.WordTiming{Word: "A", StartTime: 0, EndTime: 1.0, Speaker: "A"},
-			wantLast:     tts.WordTiming{Word: "C", StartTime: 2.0, EndTime: 3.0, Speaker: "C"},
+			wantLast:     tts.WordTiming{Word: "C", StartTime: 2.0 + 2*pause, EndTime: 3.0 + 2*pause, Speaker: "C"},
 		},
 		{
 			name:         "emptySegments",
@@ -184,6 +185,7 @@ func TestStitchMultipleSegmentsWithFFmpeg(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	stitcher := NewAudioStitcher(tmpDir)
+	pause := float64(speakerPauseMs) / 1000.0
 
 	silentMP3 := createSilentMP3(t)
 
@@ -215,8 +217,9 @@ func TestStitchMultipleSegmentsWithFFmpeg(t *testing.T) {
 	if result.Timings[1].Word != "World" {
 		t.Errorf("second word = %q, want %q", result.Timings[1].Word, "World")
 	}
-	if result.Timings[1].StartTime != 0.1 {
-		t.Errorf("second word start = %v, want 0.1", result.Timings[1].StartTime)
+	expectedStart := 0.1 + pause
+	if result.Timings[1].StartTime != expectedStart {
+		t.Errorf("second word start = %v, want %v", result.Timings[1].StartTime, expectedStart)
 	}
 }
 

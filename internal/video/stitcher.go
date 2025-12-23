@@ -10,6 +10,8 @@ import (
 	"craftstory/internal/tts"
 )
 
+const speakerPauseMs = 250
+
 type AudioSegment struct {
 	Audio   []byte
 	Timings []tts.WordTiming
@@ -59,12 +61,18 @@ func (s *AudioStitcher) Stitch(ctx context.Context, segments []AudioSegment) (*S
 		}, nil
 	}
 
-	tempFiles := make([]string, 0, len(segments))
+	tempFiles := make([]string, 0, len(segments)*2)
 	defer func() {
 		for _, f := range tempFiles {
 			_ = os.Remove(f)
 		}
 	}()
+
+	silencePath := filepath.Join(s.tempDir, "silence.mp3")
+	if err := s.generateSilence(ctx, silencePath, speakerPauseMs); err != nil {
+		return nil, fmt.Errorf("generate silence: %w", err)
+	}
+	tempFiles = append(tempFiles, silencePath)
 
 	for i, seg := range segments {
 		ext := detectAudioFormat(seg.Audio)
@@ -77,12 +85,16 @@ func (s *AudioStitcher) Stitch(ctx context.Context, segments []AudioSegment) (*S
 
 	listPath := filepath.Join(s.tempDir, "concat_list.txt")
 	listContent := ""
-	for _, f := range tempFiles {
+	for i, f := range tempFiles[1:] {
 		absPath, err := filepath.Abs(f)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get absolute path: %w", err)
 		}
 		listContent += fmt.Sprintf("file '%s'\n", absPath)
+		if i < len(segments)-1 {
+			absSilence, _ := filepath.Abs(silencePath)
+			listContent += fmt.Sprintf("file '%s'\n", absSilence)
+		}
 	}
 	if err := os.WriteFile(listPath, []byte(listContent), 0644); err != nil {
 		return nil, fmt.Errorf("failed to write concat list: %w", err)
@@ -122,12 +134,29 @@ func (s *AudioStitcher) Stitch(ctx context.Context, segments []AudioSegment) (*S
 	}, nil
 }
 
+func (s *AudioStitcher) generateSilence(ctx context.Context, outputPath string, durationMs int) error {
+	args := []string{
+		"-y",
+		"-f", "lavfi",
+		"-i", fmt.Sprintf("anullsrc=r=44100:cl=mono:d=%f", float64(durationMs)/1000),
+		"-acodec", "libmp3lame",
+		"-q:a", "2",
+		outputPath,
+	}
+	cmd := exec.CommandContext(ctx, s.ffmpegPath, args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("ffmpeg silence failed: %w, output: %s", err, string(output))
+	}
+	return nil
+}
+
 func (s *AudioStitcher) adjustTimings(segments []AudioSegment) ([]tts.WordTiming, float64, []SegmentInfo) {
 	var allTimings []tts.WordTiming
 	var segmentInfos []SegmentInfo
 	var offset float64
+	pauseDuration := float64(speakerPauseMs) / 1000.0
 
-	for _, seg := range segments {
+	for i, seg := range segments {
 		segStart := offset
 		for _, t := range seg.Timings {
 			allTimings = append(allTimings, tts.WordTiming{
@@ -145,6 +174,9 @@ func (s *AudioStitcher) adjustTimings(segments []AudioSegment) ([]tts.WordTiming
 			StartTime: segStart,
 			EndTime:   offset,
 		})
+		if i < len(segments)-1 {
+			offset += pauseDuration
+		}
 	}
 
 	return allTimings, offset, segmentInfos

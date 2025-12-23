@@ -27,8 +27,18 @@ func findKeywordInTimings(timings []tts.WordTiming, keyword string) int {
 			}
 		}
 		for i, t := range timings {
-			if strings.Contains(cleanWord(t.Word), keywordLower) {
+			cleaned := cleanWord(t.Word)
+			if strings.Contains(cleaned, keywordLower) || strings.Contains(keywordLower, cleaned) {
 				return i
+			}
+		}
+		for i, t := range timings {
+			cleaned := cleanWord(t.Word)
+			if len(cleaned) > 3 && len(keywordLower) > 3 {
+				if strings.HasPrefix(cleaned, keywordLower[:len(keywordLower)-1]) ||
+					strings.HasPrefix(keywordLower, cleaned[:len(cleaned)-1]) {
+					return i
+				}
 			}
 		}
 		return -1
@@ -46,6 +56,14 @@ func findKeywordInTimings(timings []tts.WordTiming, keyword string) int {
 			return i
 		}
 	}
+
+	firstWord := keywordWords[0]
+	for i, t := range timings {
+		if cleanWord(t.Word) == firstWord {
+			return i
+		}
+	}
+
 	return -1
 }
 

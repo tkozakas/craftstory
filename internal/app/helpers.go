@@ -9,10 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"craftstory/internal/dialogue"
-	"craftstory/internal/stickers"
 	"craftstory/internal/tts"
-	"craftstory/internal/video"
 )
 
 var wordSplitRegex = regexp.MustCompile(`\s+`)
@@ -107,75 +104,9 @@ func buildSpeakerColors(voiceMap map[string]tts.VoiceConfig) map[string]string {
 	return colors
 }
 
-func buildCharacterOverlays(segments []video.SegmentInfo, voiceMap map[string]tts.VoiceConfig) []video.CharacterOverlay {
-	speakerPositions := make(map[string]int)
-	nextPosition := 0
-
-	var overlays []video.CharacterOverlay
-	for _, seg := range segments {
-		voice, ok := voiceMap[seg.Speaker]
-		if !ok || voice.Avatar == "" {
-			continue
-		}
-
-		pos, exists := speakerPositions[seg.Speaker]
-		if !exists {
-			pos = nextPosition
-			speakerPositions[seg.Speaker] = pos
-			nextPosition = (nextPosition + 1) % 2
-		}
-
-		overlays = append(overlays, video.CharacterOverlay{
-			Speaker:    seg.Speaker,
-			AvatarPath: voice.Avatar,
-			StartTime:  seg.StartTime,
-			EndTime:    seg.EndTime,
-			Position:   pos,
-		})
-	}
-	return overlays
-}
-
 func randomInt(n int) int {
 	if n <= 0 {
 		return 0
 	}
 	return rand.Intn(n)
-}
-
-func buildStickerOverlays(lines []dialogue.Line, segments []video.SegmentInfo, stickerProviders map[string]*stickers.Provider) []video.StickerOverlay {
-	if len(lines) != len(segments) {
-		return nil
-	}
-
-	var overlays []video.StickerOverlay
-	for i, line := range lines {
-		provider, ok := stickerProviders[line.Speaker]
-		if !ok || provider == nil {
-			continue
-		}
-
-		stickerID := line.StickerID
-		if stickerID == 0 {
-			emotion := stickers.DetectEmotion(line.Text)
-			stickerID = stickers.GetStickerForEmotion(emotion, provider.Count(), i)
-		}
-
-		if stickerID == 0 {
-			continue
-		}
-
-		stickerPath := provider.Get(stickerID)
-		if stickerPath == "" {
-			continue
-		}
-
-		overlays = append(overlays, video.StickerOverlay{
-			StickerPath: stickerPath,
-			Speaker:     line.Speaker,
-			StartTime:   segments[i].StartTime,
-			EndTime:     segments[i].EndTime,
-		})
-	}
-	return overlays
 }

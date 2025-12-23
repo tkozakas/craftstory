@@ -16,10 +16,11 @@ func TestLoadFromYAML(t *testing.T) {
 	yaml := `
 groq:
   model: test-model
-rvc:
+elevenlabs:
   enabled: true
-  edge_voice: en-US-ChristopherNeural
-  device: cpu
+  host_voice:
+    id: "test-voice-id"
+    name: "TestVoice"
 content:
   word_count: 150
 `
@@ -33,8 +34,8 @@ content:
 	if cfg.Groq.Model != "test-model" {
 		t.Errorf("Groq.Model = %q, want test-model", cfg.Groq.Model)
 	}
-	if !cfg.RVC.Enabled {
-		t.Error("RVC.Enabled = false, want true")
+	if !cfg.ElevenLabs.Enabled {
+		t.Error("ElevenLabs.Enabled = false, want true")
 	}
 	if cfg.Content.WordCount != 150 {
 		t.Errorf("Content.WordCount = %d, want 150", cfg.Content.WordCount)
@@ -77,32 +78,25 @@ func TestLoadMissingConfigFile(t *testing.T) {
 	}
 }
 
-func TestLoadCharactersWithRVCModel(t *testing.T) {
+func TestLoadElevenLabsVoices(t *testing.T) {
 	tmp := t.TempDir()
 	orig, _ := os.Getwd()
 	defer func() { _ = os.Chdir(orig) }()
 	_ = os.Chdir(tmp)
 
-	charDir := filepath.Join(tmp, "characters", "bocchi")
-	_ = os.MkdirAll(charDir, 0755)
-
-	charYAML := `
-name: Bocchi
-role: host
-image: bocchi.png
-rvc_model: bocchi.pth
-subtitle_color: "#FF69B4"
-`
-	_ = os.WriteFile(filepath.Join(charDir, "character.yaml"), []byte(charYAML), 0644)
-	_ = os.WriteFile(filepath.Join(charDir, "bocchi.png"), []byte("fake"), 0644)
-	_ = os.WriteFile(filepath.Join(charDir, "bocchi.pth"), []byte("fake"), 0644)
-
 	configYAML := `
 groq:
   model: test
-characters:
-  dir: ./characters
-  host: Bocchi
+elevenlabs:
+  enabled: true
+  host_voice:
+    id: "adam-id"
+    name: "Adam"
+    subtitle_color: "#00BFFF"
+  guest_voice:
+    id: "bella-id"
+    name: "Bella"
+    subtitle_color: "#FF69B4"
 `
 	_ = os.WriteFile(filepath.Join(tmp, "config.yaml"), []byte(configYAML), 0644)
 
@@ -111,22 +105,13 @@ characters:
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	host := cfg.GetHost()
-	if host == nil {
-		t.Fatal("GetHost() returned nil")
+	if cfg.ElevenLabs.HostVoice.ID != "adam-id" {
+		t.Errorf("HostVoice.ID = %q, want adam-id", cfg.ElevenLabs.HostVoice.ID)
 	}
-
-	if host.Name != "Bocchi" {
-		t.Errorf("host.Name = %q, want Bocchi", host.Name)
+	if cfg.ElevenLabs.HostVoice.Name != "Adam" {
+		t.Errorf("HostVoice.Name = %q, want Adam", cfg.ElevenLabs.HostVoice.Name)
 	}
-
-	expectedImagePath := filepath.Join(tmp, "characters", "bocchi", "bocchi.png")
-	if host.ImagePath != expectedImagePath {
-		t.Errorf("host.ImagePath = %q, want %q", host.ImagePath, expectedImagePath)
-	}
-
-	expectedModelPath := filepath.Join(tmp, "characters", "bocchi", "bocchi.pth")
-	if host.RVCModelPath != expectedModelPath {
-		t.Errorf("host.RVCModelPath = %q, want %q", host.RVCModelPath, expectedModelPath)
+	if cfg.ElevenLabs.GuestVoice.ID != "bella-id" {
+		t.Errorf("GuestVoice.ID = %q, want bella-id", cfg.ElevenLabs.GuestVoice.ID)
 	}
 }

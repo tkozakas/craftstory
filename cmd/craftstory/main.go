@@ -8,16 +8,17 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"craftstory/internal/app"
-	"craftstory/internal/groq"
-	"craftstory/internal/imagesearch"
+	"craftstory/internal/llm"
 	"craftstory/internal/reddit"
 	"craftstory/internal/storage"
 	"craftstory/internal/telegram"
 	"craftstory/internal/tts"
 	"craftstory/internal/uploader"
 	"craftstory/internal/video"
+	"craftstory/internal/visuals"
 	"craftstory/pkg/config"
 	"craftstory/pkg/prompts"
 )
@@ -32,10 +33,10 @@ func main() {
 	os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
 
 	switch cmd {
-	case "generate":
-		runGenerate()
-	case "bot":
-		runBotCmd()
+	case "run":
+		runCronCmd()
+	case "once":
+		runOnceCmd()
 	case "help", "-h", "--help":
 		printUsage()
 	default:
@@ -49,27 +50,28 @@ func printUsage() {
 	fmt.Println(`Usage: craftstory <command> [options]
 
 Commands:
-  generate    Generate a video
-  bot         Run Telegram approval bot
+  run         Cron mode: generate from Reddit, queue for approval, repeat
+  once        Generate a single video
 
-Generate options:
+Run options:
+  -interval   Interval between generations (default: 1h)
+  -upload     Upload directly instead of queueing for approval
+
+Once options:
   -topic      Topic for video generation
   -reddit     Use random Reddit post as topic
   -upload     Upload to YouTube after generation
-  -approve    Queue for Telegram approval instead of uploading
 
 Examples:
-  craftstory generate -topic "golang concurrency"
-  craftstory generate -reddit -upload
-  craftstory generate -topic "weird facts" -approve
-  craftstory bot`)
+  craftstory run                       # cron mode, generates every hour
+  craftstory run -interval 30m         # cron with 30min interval
+  craftstory once -topic "golang tips" # single video
+  craftstory once -reddit -upload      # single from Reddit + upload`)
 }
 
-func runGenerate() {
-	topic := flag.String("topic", "", "Topic for video generation")
-	useReddit := flag.Bool("reddit", false, "Generate video from Reddit topic")
-	upload := flag.Bool("upload", false, "Upload to YouTube after generation")
-	approve := flag.Bool("approve", false, "Queue video for Telegram approval before upload")
+func runCronCmd() {
+	interval := flag.Duration("interval", time.Hour, "Interval between generations")
+	upload := flag.Bool("upload", false, "Upload directly instead of queueing for approval")
 	flag.Parse()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -91,17 +93,107 @@ func runGenerate() {
 
 	pipeline := app.NewPipeline(service)
 
+	if !*upload && approval != nil {
+		approval.StartBot()
+		defer approval.StopBot()
+	}
+
+	slog.Info("Starting cron mode", "interval", *interval, "approval", !*upload && approval != nil)
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	ticker := time.NewTicker(*interval)
+	defer ticker.Stop()
+
+	generate := func() {
+		slog.Info("Generating video from Reddit...")
+		result, err := pipeline.GenerateFromReddit(ctx)
+		if err != nil {
+			slog.Error("Generation failed", "error", err)
+			return
+		}
+
+		slog.Info("Video generated", "title", result.Title, "path", result.VideoPath)
+
+		if *upload {
+			resp, err := pipeline.Upload(ctx, app.UploadRequest{
+				VideoPath:   result.VideoPath,
+				Title:       result.Title,
+				Description: result.ScriptContent,
+			})
+			if err != nil {
+				slog.Error("Upload failed", "error", err)
+				return
+			}
+			slog.Info("Upload complete", "url", resp.URL)
+			return
+		}
+
+		if approval != nil {
+			_, err := approval.RequestApproval(ctx, telegram.ApprovalRequest{
+				VideoPath: result.VideoPath,
+				Title:     result.Title,
+				Script:    result.ScriptContent,
+			})
+			if err != nil {
+				slog.Error("Failed to queue for approval", "error", err)
+			}
+		}
+	}
+
+	generate()
+
+	for {
+		select {
+		case <-sigChan:
+			slog.Info("Shutting down...")
+			return
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			generate()
+		}
+	}
+}
+
+func runOnceCmd() {
+	topic := flag.String("topic", "", "Topic for video generation")
+	useReddit := flag.Bool("reddit", false, "Generate video from Reddit topic")
+	upload := flag.Bool("upload", false, "Upload to YouTube after generation")
+	flag.Parse()
+
+	if *topic == "" && !*useReddit {
+		slog.Error("Please provide -topic or -reddit")
+		os.Exit(1)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+
+	cfg, err := config.Load(ctx)
+	if err != nil {
+		slog.Error("Failed to load config", "error", err)
+		os.Exit(1)
+	}
+
+	service, _, err := buildService(cfg)
+	if err != nil {
+		slog.Error("Failed to build service", "error", err)
+		os.Exit(1)
+	}
+
+	pipeline := app.NewPipeline(service)
+
 	var result *app.GenerateResult
-	switch {
-	case *useReddit:
+	if *useReddit {
 		slog.Info("Generating video from Reddit...")
 		result, err = pipeline.GenerateFromReddit(ctx)
-	case *topic != "":
+	} else {
 		slog.Info("Generating video...", "topic", *topic)
 		result, err = pipeline.Generate(ctx, *topic)
-	default:
-		slog.Error("Please provide a topic with -topic or use -reddit")
-		os.Exit(1)
 	}
 
 	if err != nil {
@@ -114,64 +206,6 @@ func runGenerate() {
 		"path", result.VideoPath,
 		"duration", result.Duration,
 	)
-
-	if *approve {
-		if approval == nil {
-			slog.Error("Telegram bot token not configured")
-			os.Exit(1)
-		}
-
-		slog.Info("Queueing video for approval...")
-		_, err := approval.RequestApproval(ctx, telegram.ApprovalRequest{
-			VideoPath: result.VideoPath,
-			Title:     result.Title,
-			Script:    result.ScriptContent,
-		})
-		if err != nil {
-			slog.Error("Failed to queue for approval", "error", err)
-			os.Exit(1)
-		}
-
-		slog.Info("Waiting for approval via Telegram...")
-		approval.StartBot()
-		defer approval.StopBot()
-
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-		for {
-			select {
-			case <-sigChan:
-				slog.Info("Cancelled")
-				return
-			default:
-			}
-
-			approvalResult, video, err := approval.WaitForResult(ctx)
-			if err != nil {
-				continue
-			}
-
-			if approvalResult.Approved {
-				slog.Info("Video approved, uploading...", "title", video.Title)
-				resp, err := pipeline.Upload(ctx, app.UploadRequest{
-					VideoPath:   video.VideoPath,
-					Title:       video.Title,
-					Description: video.Script,
-				})
-				if err != nil {
-					slog.Error("Upload failed", "error", err)
-					approval.NotifyUploadFailed(video.Title, err)
-					os.Exit(1)
-				}
-				slog.Info("Upload complete", "url", resp.URL)
-				approval.NotifyUploadComplete(video.Title, resp.URL)
-			} else {
-				slog.Info("Video rejected", "title", video.Title)
-			}
-			return
-		}
-	}
 
 	if *upload {
 		slog.Info("Uploading to YouTube...")
@@ -188,98 +222,21 @@ func runGenerate() {
 	}
 }
 
-func runBotCmd() {
-	flag.Parse()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
-
-	cfg, err := config.Load(ctx)
-	if err != nil {
-		slog.Error("Failed to load config", "error", err)
-		os.Exit(1)
-	}
-
-	service, approval, err := buildService(cfg)
-	if err != nil {
-		slog.Error("Failed to build service", "error", err)
-		os.Exit(1)
-	}
-
-	if approval == nil {
-		slog.Error("Telegram bot token not configured")
-		os.Exit(1)
-	}
-
-	approval.StartBot()
-	defer approval.StopBot()
-
-	slog.Info("Bot running. Press Ctrl+C to stop.")
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	pipeline := app.NewPipeline(service)
-
-	for {
-		select {
-		case <-sigChan:
-			slog.Info("Shutting down...")
-			return
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		result, video, err := approval.WaitForResult(ctx)
-		if err != nil {
-			continue
-		}
-
-		if result.Approved {
-			slog.Info("Video approved, uploading...", "title", video.Title)
-			resp, err := pipeline.Upload(ctx, app.UploadRequest{
-				VideoPath:   video.VideoPath,
-				Title:       video.Title,
-				Description: video.Script,
-			})
-			if err != nil {
-				slog.Error("Upload failed", "error", err)
-				approval.NotifyUploadFailed(video.Title, err)
-				continue
-			}
-			slog.Info("Upload complete", "url", resp.URL)
-			approval.NotifyUploadComplete(video.Title, resp.URL)
-		} else {
-			slog.Info("Video rejected", "title", video.Title)
-		}
-	}
-}
-
 func buildService(cfg *config.Config) (*app.Service, *telegram.ApprovalService, error) {
 	p, err := prompts.Load()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	llmClient, err := groq.NewClient(cfg.GroqAPIKey, cfg.Groq.Model, p)
+	llmClient, err := llm.NewGroqClient(cfg.GroqAPIKey, cfg.Groq.Model, p)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	var ttsProvider tts.Provider
-	if cfg.RVC.Enabled {
-		host := cfg.GetHost()
-		modelPath := ""
-		if host != nil {
-			modelPath = host.RVCModelPath
-		}
-		ttsProvider = tts.NewRVCClient(tts.RVCOptions{
-			DefaultModelPath: modelPath,
-			EdgeVoice:        cfg.RVC.EdgeVoice,
-			Device:           cfg.RVC.Device,
+	if cfg.ElevenLabs.Enabled {
+		ttsProvider = tts.NewElevenLabsClient(cfg.ElevenLabsAPIKey, tts.ElevenLabsOptions{
+			VoiceID: cfg.ElevenLabs.HostVoice.ID,
 		})
 	}
 
@@ -317,9 +274,9 @@ func buildService(cfg *config.Config) (*app.Service, *telegram.ApprovalService, 
 
 	redditClient := reddit.NewClient()
 
-	var imageSearch *imagesearch.Client
+	var imageSearch *visuals.SearchClient
 	if cfg.GoogleSearchAPIKey != "" && cfg.GoogleSearchEngineID != "" {
-		imageSearch = imagesearch.NewClient(cfg.GoogleSearchAPIKey, cfg.GoogleSearchEngineID)
+		imageSearch = visuals.NewSearchClient(cfg.GoogleSearchAPIKey, cfg.GoogleSearchEngineID)
 	}
 
 	var ytUploader uploader.Uploader
@@ -334,17 +291,17 @@ func buildService(cfg *config.Config) (*app.Service, *telegram.ApprovalService, 
 		approval = telegram.NewApprovalService(telegramClient, cfg.Video.OutputDir, cfg.Telegram.DefaultChatID)
 	}
 
-	service := app.NewService(
-		cfg,
-		llmClient,
-		ttsProvider,
-		ytUploader,
-		assembler,
-		localStorage,
-		redditClient,
-		imageSearch,
-		approval,
-	)
+	service := app.NewService(app.ServiceOptions{
+		Config:      cfg,
+		LLM:         llmClient,
+		TTS:         ttsProvider,
+		Uploader:    ytUploader,
+		Assembler:   assembler,
+		Storage:     localStorage,
+		Reddit:      redditClient,
+		ImageSearch: imageSearch,
+		Approval:    approval,
+	})
 
 	return service, approval, nil
 }
