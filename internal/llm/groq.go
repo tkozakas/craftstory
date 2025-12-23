@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/conneroisu/groq-go"
@@ -66,18 +67,31 @@ func (c *GroqClient) GenerateVisuals(ctx context.Context, script string) ([]Visu
 		return nil, err
 	}
 
+	slog.Info("LLM visuals raw response", "content", content)
+
 	var visuals []VisualCue
-	if err := json.Unmarshal([]byte(content), &visuals); err == nil {
+	if err := json.Unmarshal([]byte(content), &visuals); err == nil && len(visuals) > 0 {
 		return visuals, nil
 	}
 
-	var wrapped struct {
-		Visuals []VisualCue `json:"visuals"`
-	}
+	var wrapped map[string][]VisualCue
 	if err := json.Unmarshal([]byte(content), &wrapped); err != nil {
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
-	return wrapped.Visuals, nil
+
+	for _, key := range []string{"visuals", "visual_cues", "keywords", "images", "results"} {
+		if cues, ok := wrapped[key]; ok && len(cues) > 0 {
+			return cues, nil
+		}
+	}
+
+	for _, cues := range wrapped {
+		if len(cues) > 0 {
+			return cues, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no visual cues found in response")
 }
 
 func (c *GroqClient) GenerateTitle(ctx context.Context, script string) (string, error) {

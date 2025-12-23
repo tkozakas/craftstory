@@ -118,11 +118,11 @@ script:
     Script:
     {{.Script}}
     
-    Return ONLY a JSON array (3-5 items). Each keyword must be ONE word from the script:
-    [
+    Return a JSON object with a "visuals" array (3-5 items). Each keyword must be ONE word from the script:
+    {"visuals": [
       {"keyword": "Netflix", "search_query": "Netflix logo dark dramatic"},
       {"keyword": "million", "search_query": "stack of money million dollars cinematic"}
-    ]
+    ]}
 
 title:
   generate: |
