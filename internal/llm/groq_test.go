@@ -13,27 +13,6 @@ import (
 	"craftstory/pkg/prompts"
 )
 
-// testPrompts returns a minimal Prompts struct for testing
-func testPrompts() *prompts.Prompts {
-	return &prompts.Prompts{
-		System: prompts.SystemPrompts{
-			Default:      "You are a helpful assistant.",
-			Conversation: "You are a conversation writer.",
-			Visuals:      "You generate visual cues as JSON.",
-			Title:        "You generate titles.",
-		},
-		Script: prompts.ScriptPrompts{
-			Single:       "Write about {{.Topic}} in {{.WordCount}} words.",
-			Conversation: "Write a conversation about {{.Topic}} with {{.SpeakerList}}.",
-			Visuals:      "Generate visuals for: {{.Script}}",
-		},
-		Title: prompts.TitlePrompts{
-			Generate: "Generate a title for: {{.Script}}",
-		},
-	}
-}
-
-// groqResponse represents the Groq API response structure
 type groqResponse struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
@@ -52,6 +31,25 @@ type groqResponse struct {
 		CompletionTokens int `json:"completion_tokens"`
 		TotalTokens      int `json:"total_tokens"`
 	} `json:"usage"`
+}
+
+func testPrompts() *prompts.Prompts {
+	return &prompts.Prompts{
+		System: prompts.SystemPrompts{
+			Default:      "You are a helpful assistant.",
+			Conversation: "You are a conversation writer.",
+			Visuals:      "You generate visual cues as JSON.",
+			Title:        "You generate titles.",
+		},
+		Script: prompts.ScriptPrompts{
+			Single:       "Write about {{.Topic}} in {{.WordCount}} words.",
+			Conversation: "Write a conversation about {{.Topic}} with {{.SpeakerList}}.",
+			Visuals:      "Generate visuals for: {{.Script}}",
+		},
+		Title: prompts.TitlePrompts{
+			Generate: "Generate a title for: {{.Script}}",
+		},
+	}
 }
 
 // makeGroqResponse creates a valid Groq API response with the given content
@@ -179,7 +177,7 @@ func TestGenerateScript(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(tt.responseBody))
+				_, _ = w.Write([]byte(tt.responseBody))
 			}))
 			defer server.Close()
 
@@ -268,7 +266,7 @@ func TestGenerateConversation(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(tt.responseBody))
+				_, _ = w.Write([]byte(tt.responseBody))
 			}))
 			defer server.Close()
 
@@ -381,7 +379,7 @@ func TestGenerateVisuals(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(tt.responseBody))
+				_, _ = w.Write([]byte(tt.responseBody))
 			}))
 			defer server.Close()
 
@@ -478,7 +476,7 @@ func TestGenerateTitle(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(tt.responseBody))
+				_, _ = w.Write([]byte(tt.responseBody))
 			}))
 			defer server.Close()
 
@@ -532,7 +530,7 @@ func TestRequestValidation(t *testing.T) {
 
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(mustJSON(makeGroqResponse("test response"))))
+			_, _ = w.Write([]byte(mustJSON(makeGroqResponse("test response"))))
 		}))
 		defer server.Close()
 
@@ -579,7 +577,7 @@ func TestRateLimitError(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			// 429 Too Many Requests - groq-go doesn't retry on this status
 			w.WriteHeader(http.StatusTooManyRequests)
-			w.Write([]byte(`{"error": {"message": "rate limit exceeded", "type": "rate_limit_error"}}`))
+			_, _ = w.Write([]byte(`{"error": {"message": "rate limit exceeded", "type": "rate_limit_error"}}`))
 		}))
 		defer server.Close()
 

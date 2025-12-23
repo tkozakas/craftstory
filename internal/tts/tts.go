@@ -2,9 +2,6 @@ package tts
 
 import (
 	"context"
-	"fmt"
-	"os/exec"
-	"strconv"
 	"strings"
 )
 
@@ -30,19 +27,6 @@ type Provider interface {
 	GenerateSpeech(ctx context.Context, text string) ([]byte, error)
 	GenerateSpeechWithTimings(ctx context.Context, text string) (*SpeechResult, error)
 	GenerateSpeechWithVoice(ctx context.Context, text string, voice VoiceConfig) (*SpeechResult, error)
-}
-
-func getAudioDuration(ctx context.Context, path string) (float64, error) {
-	cmd := exec.CommandContext(ctx, "ffprobe",
-		"-v", "error",
-		"-show_entries", "format=duration",
-		"-of", "default=noprint_wrappers=1:nokey=1",
-		path)
-	out, err := cmd.Output()
-	if err != nil {
-		return 0, fmt.Errorf("ffprobe: %w", err)
-	}
-	return strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
 }
 
 func estimateTimingsFromDuration(text string, duration float64) []WordTiming {

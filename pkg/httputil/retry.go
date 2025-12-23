@@ -14,6 +14,11 @@ type RetryConfig struct {
 	Multiplier   float64
 }
 
+type RetryClient struct {
+	client *http.Client
+	config RetryConfig
+}
+
 func DefaultRetryConfig() RetryConfig {
 	return RetryConfig{
 		MaxRetries:   3,
@@ -21,11 +26,6 @@ func DefaultRetryConfig() RetryConfig {
 		MaxDelay:     5 * time.Second,
 		Multiplier:   2.0,
 	}
-}
-
-type RetryClient struct {
-	client *http.Client
-	config RetryConfig
 }
 
 func NewRetryClient(client *http.Client, config RetryConfig) *RetryClient {
