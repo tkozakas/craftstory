@@ -105,33 +105,35 @@ script:
     - Everything should sound completely real and factual
 
   visuals: |
-    Extract 3-5 visual moments from this script for a short video.
+    Extract 3-5 visual keywords from this script. Focus on BRANDS and CONCRETE NOUNS.
     
-    CRITICAL RULES:
-    1. The "keyword" MUST be a SINGLE WORD that appears EXACTLY in the script (copy-paste it!)
-    2. Pick concrete, visual nouns: companies, objects, places, people, money, food
-    3. Look for words like: million, dollars, company names, CEO, fired, money, sold
-    4. The "search_query" should find a dramatic, high-quality image
+    PRIORITY ORDER (pick from top categories first):
+    1. COMPANY/BRAND NAMES: Microsoft, Google, Apple, Netflix, Facebook, Amazon, Tesla, etc.
+       → Search: "[Brand] logo dark background" or "[Brand] headquarters building"
+    2. MONEY/NUMBERS: million, billion, dollars, thousand
+       → Search: "pile of cash money cinematic" or "gold coins dramatic lighting"
+    3. PEOPLE/ROLES: CEO, engineer, founder, employee, intern
+       → Search: "business [role] silhouette dramatic" or "[role] office professional"
+    4. ACTIONS: fired, hired, sold, bought, launched, failed
+       → Search: "person getting [action] dramatic scene"
+    5. OBJECTS: computer, phone, office, building, car
+       → Search: "[object] dramatic lighting cinematic"
     
-    GOOD KEYWORDS (single words from script):
-    - "Netflix" → search: "Netflix logo neon aesthetic"
-    - "million" → search: "pile of money cash dramatic lighting"
-    - "fired" → search: "person getting fired office dramatic"
-    - "CEO" → search: "business CEO silhouette powerful"
-    
-    BAD KEYWORDS (don't use these):
-    - Multi-word phrases like "fifty million dollars"
-    - Words NOT in the script
-    - Abstract concepts like "success" or "failure"
-    - Filler words like "the", "that", "really"
+    RULES:
+    - Keyword must be EXACTLY as it appears in script (case-insensitive match is fine)
+    - Search query should find a HIGH-QUALITY, DRAMATIC image
+    - For brands: ALWAYS include "logo" or "headquarters" in search
+    - For money: use "cash", "money", "gold" visuals
+    - NEVER use abstract words: success, failure, interesting, crazy
     
     Script:
     {{.Script}}
     
-    Return a JSON object with a "visuals" array (3-5 items). Each keyword must be ONE word from the script:
+    Return JSON with "visuals" array (3-5 items):
     {"visuals": [
-      {"keyword": "Netflix", "search_query": "Netflix logo dark dramatic"},
-      {"keyword": "million", "search_query": "stack of money million dollars cinematic"}
+      {"keyword": "Microsoft", "search_query": "Microsoft logo dark background neon"},
+      {"keyword": "billion", "search_query": "billion dollars cash pile cinematic"},
+      {"keyword": "CEO", "search_query": "CEO businessman silhouette powerful"}
     ]}
 
 title:
