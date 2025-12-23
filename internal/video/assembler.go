@@ -70,6 +70,13 @@ type CharacterOverlay struct {
 	Position   int
 }
 
+type StickerOverlay struct {
+	StickerPath string
+	Speaker     string
+	StartTime   float64
+	EndTime     float64
+}
+
 type AssembleRequest struct {
 	AudioPath         string
 	AudioDuration     float64
@@ -78,6 +85,8 @@ type AssembleRequest struct {
 	WordTimings       []tts.WordTiming
 	ImageOverlays     []ImageOverlay
 	CharacterOverlays []CharacterOverlay
+	StickerOverlays   []StickerOverlay
+	SpeakerColors     map[string]string
 }
 
 type AssembleResult struct {
@@ -158,7 +167,7 @@ func (a *Assembler) Assemble(ctx context.Context, req AssembleRequest) (*Assembl
 
 	var subtitles []Subtitle
 	if len(req.WordTimings) > 0 {
-		subtitles = a.subtitleGen.GenerateFromTimings(req.WordTimings)
+		subtitles = a.subtitleGen.GenerateFromTimingsWithColors(req.WordTimings, req.SpeakerColors)
 	} else {
 		subtitles = a.subtitleGen.Generate(req.Script, req.AudioDuration)
 	}
@@ -177,7 +186,7 @@ func (a *Assembler) Assemble(ctx context.Context, req AssembleRequest) (*Assembl
 	defer func() { _ = os.Remove(assPath) }()
 
 	musicPath := a.selectMusicTrack()
-	filterComplex := a.buildFilterComplex(assPath, req.ImageOverlays, req.CharacterOverlays, musicPath, req.AudioDuration)
+	filterComplex := a.buildFilterComplex(assPath, req.ImageOverlays, req.CharacterOverlays, req.StickerOverlays, musicPath, req.AudioDuration)
 
 	mainVideoPath := outputPath
 	needsConcat := a.introPath != "" || a.outroPath != ""
@@ -186,7 +195,7 @@ func (a *Assembler) Assemble(ctx context.Context, req AssembleRequest) (*Assembl
 		defer func() { _ = os.Remove(mainVideoPath) }()
 	}
 
-	args := a.buildFFmpegArgs(backgroundClip, req.AudioPath, musicPath, startTime, req.AudioDuration, filterComplex, req.CharacterOverlays, req.ImageOverlays, mainVideoPath)
+	args := a.buildFFmpegArgs(backgroundClip, req.AudioPath, musicPath, startTime, req.AudioDuration, filterComplex, req.CharacterOverlays, req.StickerOverlays, req.ImageOverlays, mainVideoPath)
 
 	cmd := exec.CommandContext(ctx, a.ffmpegPath, args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -209,13 +218,13 @@ func (a *Assembler) Assemble(ctx context.Context, req AssembleRequest) (*Assembl
 	}, nil
 }
 
-func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, charOverlays []CharacterOverlay, musicPath string, duration float64) string {
+func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, charOverlays []CharacterOverlay, stickerOverlays []StickerOverlay, musicPath string, duration float64) string {
 	scaleFilter := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d",
 		a.width, a.height, a.width, a.height)
 
 	audioFilter := a.buildAudioFilter(musicPath, duration)
 
-	totalOverlays := len(overlays) + len(charOverlays)
+	totalOverlays := len(overlays) + len(charOverlays) + len(stickerOverlays)
 	if totalOverlays == 0 {
 		return fmt.Sprintf("[0:v]%s,ass=%s[v];%s",
 			scaleFilter, assPath, audioFilter)
@@ -256,8 +265,30 @@ func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, 
 		lastOutput = outputName
 	}
 
-	for i, overlay := range overlays {
+	stickerHeight := a.height / 3
+	for i, sticker := range stickerOverlays {
 		inputIdx := inputOffset + len(charOverlays) + i
+		scaledName := fmt.Sprintf("stk%d", i)
+		outputName := fmt.Sprintf("s%d", i)
+
+		filters = append(filters, fmt.Sprintf(
+			"[%d:v]scale=-1:%d,format=rgba[%s]",
+			inputIdx, stickerHeight, scaledName,
+		))
+
+		x := "(W-w)/2"
+		y := fmt.Sprintf("%d", a.height-stickerHeight) // Start of bottom third
+
+		filters = append(filters, fmt.Sprintf(
+			"[%s][%s]overlay=%s:%s:enable='between(t,%.2f,%.2f)'[%s]",
+			lastOutput, scaledName, x, y, sticker.StartTime, sticker.EndTime, outputName,
+		))
+
+		lastOutput = outputName
+	}
+
+	for i, overlay := range overlays {
+		inputIdx := inputOffset + len(charOverlays) + len(stickerOverlays) + i
 		scaledName := fmt.Sprintf("img%d", i)
 		outputName := fmt.Sprintf("v%d", i)
 
@@ -290,7 +321,7 @@ func (a *Assembler) getInputOffset(musicPath string) int {
 	return 2
 }
 
-func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTime, duration float64, filterComplex string, charOverlays []CharacterOverlay, overlays []ImageOverlay, outputPath string) []string {
+func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTime, duration float64, filterComplex string, charOverlays []CharacterOverlay, stickerOverlays []StickerOverlay, overlays []ImageOverlay, outputPath string) []string {
 	videoDuration := duration + videoEndBuffer
 
 	args := []string{
@@ -307,6 +338,10 @@ func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTi
 
 	for _, charOverlay := range charOverlays {
 		args = append(args, "-i", charOverlay.AvatarPath)
+	}
+
+	for _, sticker := range stickerOverlays {
+		args = append(args, "-i", sticker.StickerPath)
 	}
 
 	for _, overlay := range overlays {

@@ -239,34 +239,24 @@ func (s *ApprovalService) handleCallbackQuery(cb *CallbackQuery) {
 
 	_ = s.client.AnswerCallbackQuery(cb.ID, responseText)
 
-	// Remove buttons
 	if cb.Message != nil {
 		_ = s.client.EditMessageReplyMarkup(cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
-
-	reviewer := "unknown"
-	if cb.From != nil {
-		reviewer = cb.From.FirstName
-	}
-	slog.Info("Review decision", "approved", approved, "reviewer", reviewer, "title", video.Title)
 
 	result := &ApprovalResult{
 		Approved:   approved,
 		ReviewerID: cb.From.ID,
 	}
 
-	// Clear pending video
 	s.pendingMu.Lock()
 	s.pendingVideo = nil
 	s.pendingMu.Unlock()
 
-	// Send result to waiting channel
 	select {
 	case s.resultChan <- result:
 	default:
 	}
 
-	// Notify about remaining queue
 	remaining := s.queue.Len()
 	if remaining > 0 {
 		msg := fmt.Sprintf("📹 %d video(s) remaining in queue. Type /review to continue.", remaining)

@@ -116,16 +116,16 @@ func TestBuildFilterComplex(t *testing.T) {
 			musicPath: "",
 			duration:  30.0,
 			wantContains: []string{
-				"scale=216:-1",
+				"scale=432:-1",
 				"overlay",
-				"H-200-h",
+				"H-280-h",
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := assembler.buildFilterComplex(tt.assPath, tt.overlays, tt.charOverlays, tt.musicPath, tt.duration)
+			result := assembler.buildFilterComplex(tt.assPath, tt.overlays, tt.charOverlays, nil, tt.musicPath, tt.duration)
 
 			for _, want := range tt.wantContains {
 				if !strings.Contains(result, want) {
@@ -226,10 +226,10 @@ func TestBuildFFmpegArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			filterComplex := assembler.buildFilterComplex("/tmp/subs.ass", tt.overlays, tt.charOverlays, tt.musicPath, tt.duration)
+			filterComplex := assembler.buildFilterComplex("/tmp/subs.ass", tt.overlays, tt.charOverlays, nil, tt.musicPath, tt.duration)
 			args := assembler.buildFFmpegArgs(
 				tt.bgClip, tt.audioPath, tt.musicPath, tt.startTime, tt.duration,
-				filterComplex, tt.charOverlays, tt.overlays, "/output/out.mp4",
+				filterComplex, tt.charOverlays, nil, tt.overlays, "/output/out.mp4",
 			)
 
 			argsStr := strings.Join(args, " ")

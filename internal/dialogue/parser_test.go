@@ -221,3 +221,113 @@ func TestScriptFullText(t *testing.T) {
 		})
 	}
 }
+
+func TestParseStickerExtraction(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         string
+		wantStickerID int
+		wantText      string
+	}{
+		{
+			name:          "withSticker",
+			input:         "Host: [s1] Hello world",
+			wantStickerID: 1,
+			wantText:      "Hello world",
+		},
+		{
+			name:          "withStickerNumber5",
+			input:         "Guest: [s5] Excited greeting!",
+			wantStickerID: 5,
+			wantText:      "Excited greeting!",
+		},
+		{
+			name:          "withStickerNumber12",
+			input:         "Host: [s12] Double digit sticker",
+			wantStickerID: 12,
+			wantText:      "Double digit sticker",
+		},
+		{
+			name:          "noSticker",
+			input:         "Host: Regular text without sticker",
+			wantStickerID: 0,
+			wantText:      "Regular text without sticker",
+		},
+		{
+			name:          "stickerInMiddle",
+			input:         "Host: Text with [s3] in middle",
+			wantStickerID: 0,
+			wantText:      "Text with [s3] in middle",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			script := Parse(tt.input)
+			if len(script.Lines) != 1 {
+				t.Fatalf("Parse() got %d lines, want 1", len(script.Lines))
+			}
+
+			line := script.Lines[0]
+			if line.StickerID != tt.wantStickerID {
+				t.Errorf("StickerID = %d, want %d", line.StickerID, tt.wantStickerID)
+			}
+			if line.Text != tt.wantText {
+				t.Errorf("Text = %q, want %q", line.Text, tt.wantText)
+			}
+		})
+	}
+}
+
+func TestParseMultipleLinesWithStickers(t *testing.T) {
+	input := `Host: [s1] Hello there!
+Guest: [s3] Nice to meet you!
+Host: No sticker here
+Guest: [s7] Final line with sticker`
+
+	script := Parse(input)
+	if len(script.Lines) != 4 {
+		t.Fatalf("Parse() got %d lines, want 4", len(script.Lines))
+	}
+
+	expected := []struct {
+		speaker   string
+		stickerID int
+		text      string
+	}{
+		{"Host", 1, "Hello there!"},
+		{"Guest", 3, "Nice to meet you!"},
+		{"Host", 0, "No sticker here"},
+		{"Guest", 7, "Final line with sticker"},
+	}
+
+	for i, exp := range expected {
+		line := script.Lines[i]
+		if line.Speaker != exp.speaker {
+			t.Errorf("Line %d: Speaker = %q, want %q", i, line.Speaker, exp.speaker)
+		}
+		if line.StickerID != exp.stickerID {
+			t.Errorf("Line %d: StickerID = %d, want %d", i, line.StickerID, exp.stickerID)
+		}
+		if line.Text != exp.text {
+			t.Errorf("Line %d: Text = %q, want %q", i, line.Text, exp.text)
+		}
+	}
+}
+
+func TestParseStripFormattingWithSticker(t *testing.T) {
+	input := "Host: [s2] *Bold* and _italic_ text"
+	script := Parse(input)
+
+	if len(script.Lines) != 1 {
+		t.Fatalf("Parse() got %d lines, want 1", len(script.Lines))
+	}
+
+	line := script.Lines[0]
+	if line.StickerID != 2 {
+		t.Errorf("StickerID = %d, want 2", line.StickerID)
+	}
+	if line.Text != "Bold and italic text" {
+		t.Errorf("Text = %q, want %q", line.Text, "Bold and italic text")
+	}
+}

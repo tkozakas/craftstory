@@ -3,8 +3,11 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 
+	"craftstory/internal/dialogue"
+	"craftstory/internal/stickers"
 	"craftstory/internal/tts"
 	"craftstory/internal/uploader"
 	"craftstory/internal/video"
@@ -513,7 +516,6 @@ func TestMaxDurationFromConfig(t *testing.T) {
 				},
 			}
 
-			// Test duration check directly
 			duration := tt.duration
 			maxDuration := cfg.Video.MaxDuration
 
@@ -538,5 +540,144 @@ func TestMaxDurationZeroAllowsAnyDuration(t *testing.T) {
 
 	if maxDuration > 0 && duration > maxDuration {
 		t.Error("expected zero maxDuration to allow any duration")
+	}
+}
+
+func TestBuildStickerOverlays(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	_ = os.WriteFile(tmpDir+"/sticker_1.png", []byte("fake"), 0644)
+	_ = os.WriteFile(tmpDir+"/sticker_2.png", []byte("fake"), 0644)
+	_ = os.WriteFile(tmpDir+"/sticker_3.png", []byte("fake"), 0644)
+
+	provider, err := stickers.NewProvider(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create provider: %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		lines     []dialogue.Line
+		segments  []video.SegmentInfo
+		providers map[string]*stickers.Provider
+		want      int
+	}{
+		{
+			name:      "emptyLinesAndSegments",
+			lines:     []dialogue.Line{},
+			segments:  []video.SegmentInfo{},
+			providers: map[string]*stickers.Provider{"Alice": provider},
+			want:      0,
+		},
+		{
+			name: "mismatchedLength",
+			lines: []dialogue.Line{
+				{Speaker: "Alice", Text: "Hello", StickerID: 1},
+			},
+			segments:  []video.SegmentInfo{},
+			providers: map[string]*stickers.Provider{"Alice": provider},
+			want:      0,
+		},
+		{
+			name: "noStickers",
+			lines: []dialogue.Line{
+				{Speaker: "Alice", Text: "Hello", StickerID: 0},
+				{Speaker: "Bob", Text: "Hi", StickerID: 0},
+			},
+			segments: []video.SegmentInfo{
+				{Speaker: "Alice", StartTime: 0, EndTime: 1},
+				{Speaker: "Bob", StartTime: 1, EndTime: 2},
+			},
+			providers: map[string]*stickers.Provider{"Alice": provider},
+			want:      0,
+		},
+		{
+			name: "withStickers",
+			lines: []dialogue.Line{
+				{Speaker: "Alice", Text: "Hello", StickerID: 1},
+				{Speaker: "Alice", Text: "World", StickerID: 2},
+			},
+			segments: []video.SegmentInfo{
+				{Speaker: "Alice", StartTime: 0, EndTime: 1},
+				{Speaker: "Alice", StartTime: 1, EndTime: 2},
+			},
+			providers: map[string]*stickers.Provider{"Alice": provider},
+			want:      2,
+		},
+		{
+			name: "noProviderForSpeaker",
+			lines: []dialogue.Line{
+				{Speaker: "Unknown", Text: "Hello", StickerID: 1},
+			},
+			segments: []video.SegmentInfo{
+				{Speaker: "Unknown", StartTime: 0, EndTime: 1},
+			},
+			providers: map[string]*stickers.Provider{"Alice": provider},
+			want:      0,
+		},
+		{
+			name: "stickerOutOfRange",
+			lines: []dialogue.Line{
+				{Speaker: "Alice", Text: "Hello", StickerID: 99},
+			},
+			segments: []video.SegmentInfo{
+				{Speaker: "Alice", StartTime: 0, EndTime: 1},
+			},
+			providers: map[string]*stickers.Provider{"Alice": provider},
+			want:      0,
+		},
+		{
+			name: "nilProvider",
+			lines: []dialogue.Line{
+				{Speaker: "Alice", Text: "Hello", StickerID: 1},
+			},
+			segments: []video.SegmentInfo{
+				{Speaker: "Alice", StartTime: 0, EndTime: 1},
+			},
+			providers: map[string]*stickers.Provider{"Alice": nil},
+			want:      0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildStickerOverlays(tt.lines, tt.segments, tt.providers)
+			if len(got) != tt.want {
+				t.Errorf("buildStickerOverlays() returned %d overlays, want %d", len(got), tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildStickerOverlaysContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	_ = os.WriteFile(tmpDir+"/sticker_1.png", []byte("fake"), 0644)
+	_ = os.WriteFile(tmpDir+"/sticker_2.png", []byte("fake"), 0644)
+
+	provider, _ := stickers.NewProvider(tmpDir)
+
+	lines := []dialogue.Line{
+		{Speaker: "Alice", Text: "Hello", StickerID: 1},
+		{Speaker: "Alice", Text: "World", StickerID: 0},
+		{Speaker: "Alice", Text: "Test", StickerID: 2},
+	}
+	segments := []video.SegmentInfo{
+		{Speaker: "Alice", StartTime: 0, EndTime: 1},
+		{Speaker: "Alice", StartTime: 1, EndTime: 2},
+		{Speaker: "Alice", StartTime: 2, EndTime: 3},
+	}
+	providers := map[string]*stickers.Provider{"Alice": provider}
+
+	overlays := buildStickerOverlays(lines, segments, providers)
+
+	if len(overlays) != 2 {
+		t.Fatalf("expected 2 overlays, got %d", len(overlays))
+	}
+
+	if overlays[0].StartTime != 0 || overlays[0].EndTime != 1 {
+		t.Errorf("overlay[0] times = %.1f-%.1f, want 0-1", overlays[0].StartTime, overlays[0].EndTime)
+	}
+	if overlays[1].StartTime != 2 || overlays[1].EndTime != 3 {
+		t.Errorf("overlay[1] times = %.1f-%.1f, want 2-3", overlays[1].StartTime, overlays[1].EndTime)
 	}
 }

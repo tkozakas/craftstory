@@ -11,6 +11,7 @@ type Subtitle struct {
 	Word      string
 	StartTime float64
 	EndTime   float64
+	Color     string
 }
 
 type SubtitleGenerator struct {
@@ -83,6 +84,10 @@ func toASSColor(color string) string {
 }
 
 func (g *SubtitleGenerator) GenerateFromTimings(timings []tts.WordTiming) []Subtitle {
+	return g.GenerateFromTimingsWithColors(timings, nil)
+}
+
+func (g *SubtitleGenerator) GenerateFromTimingsWithColors(timings []tts.WordTiming, speakerColors map[string]string) []Subtitle {
 	subtitles := make([]Subtitle, 0, len(timings))
 	for _, t := range timings {
 		startTime := t.StartTime + g.offset
@@ -93,10 +98,17 @@ func (g *SubtitleGenerator) GenerateFromTimings(timings []tts.WordTiming) []Subt
 		if endTime < 0 {
 			endTime = 0
 		}
+
+		color := ""
+		if speakerColors != nil && t.Speaker != "" {
+			color = speakerColors[t.Speaker]
+		}
+
 		subtitles = append(subtitles, Subtitle{
 			Word:      t.Word,
 			StartTime: startTime,
 			EndTime:   endTime,
+			Color:     color,
 		})
 	}
 	return subtitles
@@ -152,7 +164,14 @@ func (g *SubtitleGenerator) ToASS(subtitles []Subtitle) string {
 	for _, sub := range subtitles {
 		start := formatASSTime(sub.StartTime)
 		end := formatASSTime(sub.EndTime)
-		sb.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Default,,0,0,0,,%s\n", start, end, sub.Word))
+
+		text := sub.Word
+		if sub.Color != "" {
+			assColor := toASSColor(sub.Color)
+			text = fmt.Sprintf("{\\c%s}%s", assColor, sub.Word)
+		}
+
+		sb.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Default,,0,0,0,,%s\n", start, end, text))
 	}
 
 	return sb.String()

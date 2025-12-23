@@ -14,13 +14,14 @@ func TestLoadFromYAML(t *testing.T) {
 	_ = os.Chdir(tmp)
 
 	yaml := `
-gemini:
-  project: test-project
+groq:
   model: test-model
-elevenlabs:
-  voice_id: test-voice
+rvc:
+  enabled: true
+  edge_voice: en-US-ChristopherNeural
+  device: cpu
 content:
-  script_length: 45
+  word_count: 150
 `
 	_ = os.WriteFile(filepath.Join(tmp, "config.yaml"), []byte(yaml), 0644)
 
@@ -29,14 +30,14 @@ content:
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	if cfg.Gemini.Model != "test-model" {
-		t.Errorf("Gemini.Model = %q, want test-model", cfg.Gemini.Model)
+	if cfg.Groq.Model != "test-model" {
+		t.Errorf("Groq.Model = %q, want test-model", cfg.Groq.Model)
 	}
-	if cfg.ElevenLabs.VoiceID != "test-voice" {
-		t.Errorf("ElevenLabs.VoiceID = %q, want test-voice", cfg.ElevenLabs.VoiceID)
+	if !cfg.RVC.Enabled {
+		t.Error("RVC.Enabled = false, want true")
 	}
-	if cfg.Content.ScriptLength != 45 {
-		t.Errorf("Content.ScriptLength = %d, want 45", cfg.Content.ScriptLength)
+	if cfg.Content.WordCount != 150 {
+		t.Errorf("Content.WordCount = %d, want 150", cfg.Content.WordCount)
 	}
 }
 
@@ -46,9 +47,9 @@ func TestLoadFromEnv(t *testing.T) {
 	defer func() { _ = os.Chdir(orig) }()
 	_ = os.Chdir(tmp)
 
-	_ = os.WriteFile(filepath.Join(tmp, "config.yaml"), []byte("gemini:\n  model: x"), 0644)
+	_ = os.WriteFile(filepath.Join(tmp, "config.yaml"), []byte("groq:\n  model: x"), 0644)
 
-	t.Setenv("ELEVENLABS_API_KEY", "test-eleven")
+	t.Setenv("GROQ_API_KEY", "test-groq")
 	t.Setenv("GOOGLE_CLOUD_PROJECT", "test-project")
 
 	cfg, err := Load(context.Background())
@@ -56,11 +57,11 @@ func TestLoadFromEnv(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	if cfg.ElevenLabsAPIKey != "test-eleven" {
-		t.Errorf("ElevenLabsAPIKey = %q, want test-eleven", cfg.ElevenLabsAPIKey)
+	if cfg.GroqAPIKey != "test-groq" {
+		t.Errorf("GroqAPIKey = %q, want test-groq", cfg.GroqAPIKey)
 	}
-	if cfg.Gemini.Project != "test-project" {
-		t.Errorf("Gemini.Project = %q, want test-project", cfg.Gemini.Project)
+	if cfg.GCPProject != "test-project" {
+		t.Errorf("GCPProject = %q, want test-project", cfg.GCPProject)
 	}
 }
 
@@ -73,5 +74,59 @@ func TestLoadMissingConfigFile(t *testing.T) {
 	_, err := Load(context.Background())
 	if err == nil {
 		t.Error("Load() should fail when config.yaml missing")
+	}
+}
+
+func TestLoadCharactersWithRVCModel(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	_ = os.Chdir(tmp)
+
+	charDir := filepath.Join(tmp, "characters", "bocchi")
+	_ = os.MkdirAll(charDir, 0755)
+
+	charYAML := `
+name: Bocchi
+role: host
+image: bocchi.png
+rvc_model: bocchi.pth
+subtitle_color: "#FF69B4"
+`
+	_ = os.WriteFile(filepath.Join(charDir, "character.yaml"), []byte(charYAML), 0644)
+	_ = os.WriteFile(filepath.Join(charDir, "bocchi.png"), []byte("fake"), 0644)
+	_ = os.WriteFile(filepath.Join(charDir, "bocchi.pth"), []byte("fake"), 0644)
+
+	configYAML := `
+groq:
+  model: test
+characters:
+  dir: ./characters
+  host: Bocchi
+`
+	_ = os.WriteFile(filepath.Join(tmp, "config.yaml"), []byte(configYAML), 0644)
+
+	cfg, err := Load(context.Background())
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	host := cfg.GetHost()
+	if host == nil {
+		t.Fatal("GetHost() returned nil")
+	}
+
+	if host.Name != "Bocchi" {
+		t.Errorf("host.Name = %q, want Bocchi", host.Name)
+	}
+
+	expectedImagePath := filepath.Join(tmp, "characters", "bocchi", "bocchi.png")
+	if host.ImagePath != expectedImagePath {
+		t.Errorf("host.ImagePath = %q, want %q", host.ImagePath, expectedImagePath)
+	}
+
+	expectedModelPath := filepath.Join(tmp, "characters", "bocchi", "bocchi.pth")
+	if host.RVCModelPath != expectedModelPath {
+		t.Errorf("host.RVCModelPath = %q, want %q", host.RVCModelPath, expectedModelPath)
 	}
 }

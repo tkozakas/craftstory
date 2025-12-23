@@ -5,6 +5,17 @@ tasks:
     cmds:
       - task: check
 
+  setup:
+    desc: Setup environment and dependencies
+    cmds:
+      - uv sync
+      - mkdir -p assets/backgrounds assets/music assets/characters output
+      - gcloud secrets create groq-api-key --replication-policy="automatic" 2>/dev/null || true
+      - gcloud secrets create telegram-bot-token --replication-policy="automatic" 2>/dev/null || true
+      - echo "Add secrets with:"
+      - echo "  echo -n 'YOUR_KEY' | gcloud secrets versions add groq-api-key --data-file=-"
+      - echo "  echo -n 'YOUR_TOKEN' | gcloud secrets versions add telegram-bot-token --data-file=-"
+
   run:
     cmds:
       - go run ./cmd/craftstory {{.CLI_ARGS}}

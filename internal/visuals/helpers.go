@@ -49,6 +49,24 @@ func findKeywordInTimings(timings []tts.WordTiming, keyword string) int {
 	return -1
 }
 
+func findSpeakerSegmentEnd(timings []tts.WordTiming, startIndex int) float64 {
+	if startIndex < 0 || startIndex >= len(timings) {
+		return 0
+	}
+
+	speaker := timings[startIndex].Speaker
+	lastEndTime := timings[startIndex].EndTime
+
+	for i := startIndex + 1; i < len(timings); i++ {
+		if timings[i].Speaker != speaker && speaker != "" {
+			break
+		}
+		lastEndTime = timings[i].EndTime
+	}
+
+	return lastEndTime
+}
+
 func cleanWord(word string) string {
 	return strings.ToLower(strings.Trim(word, ".,!?;:'\"()[]{}"))
 }

@@ -19,9 +19,9 @@ system:
   title: "Title system prompt"
 
 script:
-  single: "Generate {{.ScriptLength}}-second script about {{.Topic}}"
+  single: "Generate {{.WordCount}} word script about {{.Topic}}"
   conversation: "Conversation about {{.Topic}} with {{.SpeakerList}}"
-  with_visuals: "Script with {{.MaxVisuals}} visuals about {{.Topic}}"
+  visuals: "Extract visuals from: {{.Script}}"
 
 title:
   generate: "Title for: {{.Script}}"
@@ -95,20 +95,19 @@ func TestLoadFromInvalid(t *testing.T) {
 func TestRenderScript(t *testing.T) {
 	p := &Prompts{
 		Script: ScriptPrompts{
-			Single: "Generate {{.ScriptLength}}-second script about {{.Topic}} with {{.HookDuration}}s hook",
+			Single: "Generate {{.WordCount}} word script about {{.Topic}}",
 		},
 	}
 
 	result, err := p.RenderScript(ScriptParams{
-		Topic:        "space",
-		ScriptLength: 60,
-		HookDuration: 3,
+		Topic:     "space",
+		WordCount: 150,
 	})
 	if err != nil {
 		t.Fatalf("RenderScript() error = %v", err)
 	}
 
-	expected := "Generate 60-second script about space with 3s hook"
+	expected := "Generate 150 word script about space"
 	if result != expected {
 		t.Errorf("RenderScript() = %q, want %q", result, expected)
 	}
@@ -126,8 +125,7 @@ func TestRenderConversation(t *testing.T) {
 		FirstSpeaker: "Host",
 		LastSpeaker:  "Guest",
 		SpeakerList:  "Host, Guest",
-		ScriptLength: 60,
-		HookDuration: 3,
+		WordCount:    150,
 	})
 	if err != nil {
 		t.Fatalf("RenderConversation() error = %v", err)
@@ -142,20 +140,18 @@ func TestRenderConversation(t *testing.T) {
 func TestRenderVisuals(t *testing.T) {
 	p := &Prompts{
 		Script: ScriptPrompts{
-			WithVisuals: "Script about {{.Topic}} for {{.ScriptLength}} seconds",
+			Visuals: "Extract visuals from: {{.Script}}",
 		},
 	}
 
 	result, err := p.RenderVisuals(VisualsParams{
-		Topic:        "nature",
-		ScriptLength: 60,
-		HookDuration: 3,
+		Script: "A story about nature and trees",
 	})
 	if err != nil {
 		t.Fatalf("RenderVisuals() error = %v", err)
 	}
 
-	expected := "Script about nature for 60 seconds"
+	expected := "Extract visuals from: A story about nature and trees"
 	if result != expected {
 		t.Errorf("RenderVisuals() = %q, want %q", result, expected)
 	}

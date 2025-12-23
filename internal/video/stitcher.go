@@ -134,6 +134,7 @@ func (s *AudioStitcher) adjustTimings(segments []AudioSegment) ([]tts.WordTiming
 				Word:      t.Word,
 				StartTime: t.StartTime + offset,
 				EndTime:   t.EndTime + offset,
+				Speaker:   seg.Speaker,
 			})
 		}
 		if len(seg.Timings) > 0 {

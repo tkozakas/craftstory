@@ -39,8 +39,7 @@ func NewService(
 ) *Service {
 	var fetcher *visuals.Fetcher
 	if imageSearch != nil {
-		fetcher = visuals.NewFetcher(imageSearch, llmClient, visuals.Config{
-			Enabled:     cfg.Visuals.Enabled,
+		fetcher = visuals.NewFetcher(imageSearch, visuals.Config{
 			DisplayTime: cfg.Visuals.DisplayTime,
 			ImageWidth:  cfg.Visuals.ImageWidth,
 			ImageHeight: cfg.Visuals.ImageHeight,

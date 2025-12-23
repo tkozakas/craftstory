@@ -17,12 +17,7 @@ type ImageSearcher interface {
 	DownloadImage(ctx context.Context, imageURL string) ([]byte, error)
 }
 
-type LLMClient interface {
-	GenerateVisualsForScript(ctx context.Context, script string) ([]llm.VisualCue, error)
-}
-
 type Config struct {
-	Enabled     bool
 	DisplayTime float64
 	ImageWidth  int
 	ImageHeight int
@@ -38,14 +33,12 @@ type FetchRequest struct {
 
 type Fetcher struct {
 	imageSearch ImageSearcher
-	llm         LLMClient
 	cfg         Config
 }
 
-func NewFetcher(imageSearch ImageSearcher, llm LLMClient, cfg Config) *Fetcher {
+func NewFetcher(imageSearch ImageSearcher, cfg Config) *Fetcher {
 	return &Fetcher{
 		imageSearch: imageSearch,
-		llm:         llm,
 		cfg:         cfg,
 	}
 }
@@ -78,24 +71,6 @@ func (f *Fetcher) Fetch(ctx context.Context, req FetchRequest) []video.ImageOver
 	return f.enforceConstraints(overlays)
 }
 
-func (f *Fetcher) FetchForConversation(ctx context.Context, script string, timings []tts.WordTiming, imageDir string) []video.ImageOverlay {
-	if !f.cfg.Enabled || f.imageSearch == nil {
-		return nil
-	}
-
-	visuals := f.generateCues(ctx, script)
-	if len(visuals) == 0 {
-		return nil
-	}
-
-	return f.Fetch(ctx, FetchRequest{
-		Script:   script,
-		Visuals:  visuals,
-		Timings:  timings,
-		ImageDir: imageDir,
-	})
-}
-
 func (f *Fetcher) fetchSingle(ctx context.Context, imageDir string, index int, cue llm.VisualCue, script string, timings []tts.WordTiming) *video.ImageOverlay {
 	wordIndex := findKeywordInTimings(timings, cue.Keyword)
 	if wordIndex < 0 {
@@ -123,10 +98,13 @@ func (f *Fetcher) fetchSingle(ctx context.Context, imageDir string, index int, c
 		return nil
 	}
 
+	startTime := timings[wordIndex].StartTime
+	endTime := findSpeakerSegmentEnd(timings, wordIndex)
+
 	return &video.ImageOverlay{
 		ImagePath: imagePath,
-		StartTime: timings[wordIndex].StartTime,
-		EndTime:   timings[wordIndex].StartTime + f.cfg.DisplayTime,
+		StartTime: startTime,
+		EndTime:   endTime,
 		Width:     f.cfg.ImageWidth,
 		Height:    f.cfg.ImageHeight,
 	}
@@ -158,14 +136,6 @@ func (f *Fetcher) downloadValid(ctx context.Context, results []imagesearch.Searc
 		return data, ext
 	}
 	return nil, ""
-}
-
-func (f *Fetcher) generateCues(ctx context.Context, script string) []llm.VisualCue {
-	visuals, err := f.llm.GenerateVisualsForScript(ctx, script)
-	if err != nil {
-		return nil
-	}
-	return visuals
 }
 
 func (f *Fetcher) enforceConstraints(overlays []video.ImageOverlay) []video.ImageOverlay {

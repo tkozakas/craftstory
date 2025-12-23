@@ -18,19 +18,16 @@ type Prompts struct {
 }
 
 type SystemPrompts struct {
-	Default            string `yaml:"default"`
-	Conversation       string `yaml:"conversation"`
-	ConversationReddit string `yaml:"conversation_reddit"`
-	Visuals            string `yaml:"visuals"`
-	Title              string `yaml:"title"`
+	Default      string `yaml:"default"`
+	Conversation string `yaml:"conversation"`
+	Visuals      string `yaml:"visuals"`
+	Title        string `yaml:"title"`
 }
 
 type ScriptPrompts struct {
-	Single             string `yaml:"single"`
-	Conversation       string `yaml:"conversation"`
-	RedditConversation string `yaml:"reddit_conversation"`
-	WithVisuals        string `yaml:"with_visuals"`
-	VisualsOnly        string `yaml:"visuals_only"`
+	Single       string `yaml:"single"`
+	Conversation string `yaml:"conversation"`
+	Visuals      string `yaml:"visuals"`
 }
 
 type TitlePrompts struct {
@@ -38,38 +35,19 @@ type TitlePrompts struct {
 }
 
 type ScriptParams struct {
-	Topic        string
-	ScriptLength int
-	HookDuration int
+	Topic     string
+	WordCount int
 }
 
 type ConversationParams struct {
 	Topic        string
-	ScriptLength int
-	HookDuration int
+	WordCount    int
 	SpeakerList  string
 	FirstSpeaker string
 	LastSpeaker  string
 }
 
-type RedditConversationParams struct {
-	RedditTitle    string
-	RedditPost     string
-	RedditComments string
-	ScriptLength   int
-	HookDuration   int
-	SpeakerList    string
-	FirstSpeaker   string
-	LastSpeaker    string
-}
-
 type VisualsParams struct {
-	Topic        string
-	ScriptLength int
-	HookDuration int
-}
-
-type VisualsOnlyParams struct {
 	Script string
 }
 
@@ -103,16 +81,8 @@ func (p *Prompts) RenderConversation(params ConversationParams) (string, error) 
 	return render(p.Script.Conversation, params)
 }
 
-func (p *Prompts) RenderRedditConversation(params RedditConversationParams) (string, error) {
-	return render(p.Script.RedditConversation, params)
-}
-
 func (p *Prompts) RenderVisuals(params VisualsParams) (string, error) {
-	return render(p.Script.WithVisuals, params)
-}
-
-func (p *Prompts) RenderVisualsOnly(params VisualsOnlyParams) (string, error) {
-	return render(p.Script.VisualsOnly, params)
+	return render(p.Script.Visuals, params)
 }
 
 func (p *Prompts) RenderTitle(params TitleParams) (string, error) {

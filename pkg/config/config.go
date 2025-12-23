@@ -13,8 +13,8 @@ import (
 )
 
 type Config struct {
-	ElevenLabsAPIKey     string
-	FishAudioAPIKey      string
+	GCPProject           string
+	GroqAPIKey           string
 	YouTubeClientID      string
 	YouTubeClientSecret  string
 	YouTubeTokenPath     string
@@ -23,9 +23,8 @@ type Config struct {
 	GoogleSearchEngineID string
 	TelegramBotToken     string
 
-	Gemini     GeminiConfig     `yaml:"gemini"`
-	ElevenLabs ElevenLabsConfig `yaml:"elevenlabs"`
-	FishAudio  FishAudioConfig  `yaml:"fishaudio"`
+	Groq       GroqConfig       `yaml:"groq"`
+	RVC        RVCConfig        `yaml:"rvc"`
 	Content    ContentConfig    `yaml:"content"`
 	Video      VideoConfig      `yaml:"video"`
 	Music      MusicConfig      `yaml:"music"`
@@ -40,32 +39,15 @@ type Config struct {
 	LoadedCharacters []Character
 }
 
-type GeminiConfig struct {
-	Project  string `yaml:"project"`
-	Location string `yaml:"location"`
-	Model    string `yaml:"model"`
+type GroqConfig struct {
+	Model string `yaml:"model"`
 }
 
-type ElevenLabsConfig struct {
-	VoiceID    string  `yaml:"voice_id"`
-	Model      string  `yaml:"model"`
-	Stability  float64 `yaml:"stability"`
-	Similarity float64 `yaml:"similarity"`
-	Voices     []Voice `yaml:"voices"`
-}
-
-type Voice struct {
-	ID         string  `yaml:"id"`
-	Name       string  `yaml:"name"`
-	Stability  float64 `yaml:"stability"`
-	Similarity float64 `yaml:"similarity"`
-	Avatar     string  `yaml:"avatar"`
-}
-
-type FishAudioConfig struct {
-	Enabled bool    `yaml:"enabled"`
-	VoiceID string  `yaml:"voice_id"`
-	Voices  []Voice `yaml:"voices"`
+type RVCConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	EdgeVoice   string `yaml:"edge_voice"`
+	Device      string `yaml:"device"`
+	Parallelism int    `yaml:"parallelism"`
 }
 
 type CharactersConfig struct {
@@ -80,12 +62,16 @@ type Character struct {
 	VoiceID       string `yaml:"voice_id"`
 	Image         string `yaml:"image"`
 	SubtitleColor string `yaml:"subtitle_color"`
+	RVCModel      string `yaml:"rvc_model"`
+	StickerPack   string `yaml:"sticker_pack"` // getstickerpack.com slug
+	StickerCount  int    `yaml:"sticker_count"`
 	ImagePath     string
+	RVCModelPath  string
+	StickersPath  string
 }
 
 type ContentConfig struct {
-	ScriptLength     int  `yaml:"script_length"`
-	HookDuration     int  `yaml:"hook_duration"`
+	WordCount        int  `yaml:"word_count"`
 	ConversationMode bool `yaml:"conversation_mode"`
 }
 
@@ -128,7 +114,6 @@ type GCSConfig struct {
 }
 
 type VisualsConfig struct {
-	Enabled     bool    `yaml:"enabled"`
 	Position    string  `yaml:"position"`
 	DisplayTime float64 `yaml:"display_time"`
 	ImageWidth  int     `yaml:"image_width"`
@@ -137,10 +122,9 @@ type VisualsConfig struct {
 }
 
 type RedditConfig struct {
-	Subreddits   []string `yaml:"subreddits"`
-	Sort         string   `yaml:"sort"`
-	PostLimit    int      `yaml:"post_limit"`
-	CommentLimit int      `yaml:"comment_limit"`
+	Subreddits []string `yaml:"subreddits"`
+	Sort       string   `yaml:"sort"`
+	PostLimit  int      `yaml:"post_limit"`
 }
 
 type TelegramConfig struct {
@@ -160,10 +144,7 @@ func Load(ctx context.Context) (*Config, error) {
 		return nil, fmt.Errorf("parse config.yaml: %w", err)
 	}
 
-	if cfg.Gemini.Project == "" {
-		cfg.Gemini.Project = os.Getenv("GOOGLE_CLOUD_PROJECT")
-	}
-
+	cfg.GCPProject = os.Getenv("GOOGLE_CLOUD_PROJECT")
 	cfg.YouTubeTokenPath = envOr("YOUTUBE_TOKEN_PATH", "./youtube_token.json")
 	cfg.GCSBucket = os.Getenv("GCS_BUCKET")
 
@@ -177,6 +158,11 @@ func (cfg *Config) loadCharacters() {
 	dir := cfg.Characters.Dir
 	if dir == "" {
 		dir = "./assets/characters"
+	}
+
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return
 	}
 
 	entries, err := os.ReadDir(dir)
@@ -200,8 +186,15 @@ func (cfg *Config) loadCharacters() {
 			continue
 		}
 
+		charDir := filepath.Join(dir, entry.Name())
 		if char.Image != "" {
-			char.ImagePath = filepath.Join(dir, entry.Name(), char.Image)
+			char.ImagePath = filepath.Join(charDir, char.Image)
+		}
+		if char.RVCModel != "" {
+			char.RVCModelPath = filepath.Join(charDir, char.RVCModel)
+		}
+		if char.StickerPack != "" {
+			char.StickersPath = filepath.Join(charDir, "stickers")
 		}
 
 		cfg.LoadedCharacters = append(cfg.LoadedCharacters, char)
@@ -251,8 +244,7 @@ func (cfg *Config) loadSecrets(ctx context.Context) {
 		envName    string
 		dest       *string
 	}{
-		{"elevenlabs-api-key", "ELEVENLABS_API_KEY", &cfg.ElevenLabsAPIKey},
-		{"fishaudio-api-key", "FISHAUDIO_API_KEY", &cfg.FishAudioAPIKey},
+		{"groq-api-key", "GROQ_API_KEY", &cfg.GroqAPIKey},
 		{"youtube-client-id", "YOUTUBE_CLIENT_ID", &cfg.YouTubeClientID},
 		{"youtube-client-secret", "YOUTUBE_CLIENT_SECRET", &cfg.YouTubeClientSecret},
 		{"google-search-api-key", "GOOGLE_SEARCH_API_KEY", &cfg.GoogleSearchAPIKey},
@@ -261,7 +253,7 @@ func (cfg *Config) loadSecrets(ctx context.Context) {
 	}
 
 	var client *secretmanager.Client
-	if cfg.Gemini.Project != "" {
+	if cfg.GCPProject != "" {
 		var err error
 		client, err = secretmanager.NewClient(ctx)
 		if err == nil {
@@ -270,8 +262,8 @@ func (cfg *Config) loadSecrets(ctx context.Context) {
 	}
 
 	for _, s := range secrets {
-		if client != nil && cfg.Gemini.Project != "" {
-			if val, err := accessSecret(ctx, client, cfg.Gemini.Project, s.secretName); err == nil {
+		if client != nil && cfg.GCPProject != "" {
+			if val, err := accessSecret(ctx, client, cfg.GCPProject, s.secretName); err == nil {
 				*s.dest = val
 				continue
 			}

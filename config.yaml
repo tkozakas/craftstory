@@ -1,39 +1,22 @@
-gemini:
-  project: "craftstory-481820"
-  location: "us-central1"
-  model: "gemini-2.5-flash"
+groq:
+  model: "llama-3.3-70b-versatile"
 
-elevenlabs:
-  voice_id: "esy0r39YPLQjOczyOib8"
-  model: "eleven_multilingual_v2"
-  stability: 0.75
-  similarity: 0.75
-  voices:
-    - name: "Host"
-      id: "esy0r39YPLQjOczyOib8"
-      stability: 0.70
-      similarity: 0.80
-    - name: "Guest"
-      id: "NOpBlnGInO9m6vDvFkFC"
-      stability: 0.85
-      similarity: 0.75
-
-fishaudio:
+rvc:
   enabled: true
-  voice_id: "54e3a85ac9594ffa83264b8a494b901b"
+  edge_voice: "en-US-AvaNeural"
+  device: "cuda:0"
+  parallelism: 2
 
 characters:
   dir: "./assets/characters"
-  host: "SpongeBob"
-  guest: "Patrick"
+  host: "Hitori"
+  guest: "Kita"
 
 content:
-  script_length: 50
-  hook_duration: 3
+  word_count: 150
   conversation_mode: true
 
 visuals:
-  enabled: true
   position: "top"
   display_time: 2.0
   image_width: 800
@@ -44,7 +27,7 @@ video:
   output_dir: "./output"
   cache_dir: "./.cache"
   resolution: "1080x1920"
-  max_duration: 90.0
+  max_duration: 120.0
 
 music:
   enabled: true
@@ -83,7 +66,6 @@ reddit:
     - "ExperiencedDevs"
   sort: "hot"
   post_limit: 10
-  comment_limit: 15
 
 telegram:
-  default_chat_id: 0
+  default_chat_id: 1672345732

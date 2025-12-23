@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 
+	"craftstory/internal/dialogue"
+	"craftstory/internal/stickers"
 	"craftstory/internal/tts"
 	"craftstory/internal/video"
 )
@@ -95,6 +97,16 @@ func buildVoiceMap(voices []tts.VoiceConfig) map[string]tts.VoiceConfig {
 	return m
 }
 
+func buildSpeakerColors(voiceMap map[string]tts.VoiceConfig) map[string]string {
+	colors := make(map[string]string, len(voiceMap))
+	for name, voice := range voiceMap {
+		if voice.SubtitleColor != "" {
+			colors[name] = voice.SubtitleColor
+		}
+	}
+	return colors
+}
+
 func buildCharacterOverlays(segments []video.SegmentInfo, voiceMap map[string]tts.VoiceConfig) []video.CharacterOverlay {
 	speakerPositions := make(map[string]int)
 	nextPosition := 0
@@ -129,4 +141,41 @@ func randomInt(n int) int {
 		return 0
 	}
 	return rand.Intn(n)
+}
+
+func buildStickerOverlays(lines []dialogue.Line, segments []video.SegmentInfo, stickerProviders map[string]*stickers.Provider) []video.StickerOverlay {
+	if len(lines) != len(segments) {
+		return nil
+	}
+
+	var overlays []video.StickerOverlay
+	for i, line := range lines {
+		provider, ok := stickerProviders[line.Speaker]
+		if !ok || provider == nil {
+			continue
+		}
+
+		stickerID := line.StickerID
+		if stickerID == 0 {
+			emotion := stickers.DetectEmotion(line.Text)
+			stickerID = stickers.GetStickerForEmotion(emotion, provider.Count(), i)
+		}
+
+		if stickerID == 0 {
+			continue
+		}
+
+		stickerPath := provider.Get(stickerID)
+		if stickerPath == "" {
+			continue
+		}
+
+		overlays = append(overlays, video.StickerOverlay{
+			StickerPath: stickerPath,
+			Speaker:     line.Speaker,
+			StartTime:   segments[i].StartTime,
+			EndTime:     segments[i].EndTime,
+		})
+	}
+	return overlays
 }

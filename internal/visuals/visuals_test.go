@@ -233,3 +233,78 @@ func TestIsValidImage(t *testing.T) {
 		})
 	}
 }
+
+func TestFindSpeakerSegmentEnd(t *testing.T) {
+	tests := []struct {
+		name       string
+		timings    []tts.WordTiming
+		startIndex int
+		want       float64
+	}{
+		{
+			name: "singleSpeaker",
+			timings: []tts.WordTiming{
+				{Word: "Hello", StartTime: 0, EndTime: 0.5, Speaker: "Alice"},
+				{Word: "world", StartTime: 0.5, EndTime: 1.0, Speaker: "Alice"},
+				{Word: "today", StartTime: 1.0, EndTime: 1.5, Speaker: "Alice"},
+			},
+			startIndex: 0,
+			want:       1.5,
+		},
+		{
+			name: "speakerChangesMidway",
+			timings: []tts.WordTiming{
+				{Word: "Hello", StartTime: 0, EndTime: 0.5, Speaker: "Alice"},
+				{Word: "world", StartTime: 0.5, EndTime: 1.0, Speaker: "Alice"},
+				{Word: "Hi", StartTime: 1.0, EndTime: 1.5, Speaker: "Bob"},
+				{Word: "there", StartTime: 1.5, EndTime: 2.0, Speaker: "Bob"},
+			},
+			startIndex: 0,
+			want:       1.0,
+		},
+		{
+			name: "startFromMiddle",
+			timings: []tts.WordTiming{
+				{Word: "Hello", StartTime: 0, EndTime: 0.5, Speaker: "Alice"},
+				{Word: "world", StartTime: 0.5, EndTime: 1.0, Speaker: "Alice"},
+				{Word: "Hi", StartTime: 1.0, EndTime: 1.5, Speaker: "Bob"},
+				{Word: "there", StartTime: 1.5, EndTime: 2.0, Speaker: "Bob"},
+			},
+			startIndex: 2,
+			want:       2.0,
+		},
+		{
+			name: "emptySpeaker",
+			timings: []tts.WordTiming{
+				{Word: "Hello", StartTime: 0, EndTime: 0.5, Speaker: ""},
+				{Word: "world", StartTime: 0.5, EndTime: 1.0, Speaker: ""},
+			},
+			startIndex: 0,
+			want:       1.0,
+		},
+		{
+			name:       "invalidIndex",
+			timings:    []tts.WordTiming{},
+			startIndex: 5,
+			want:       0,
+		},
+		{
+			name: "lastWord",
+			timings: []tts.WordTiming{
+				{Word: "Hello", StartTime: 0, EndTime: 0.5, Speaker: "Alice"},
+				{Word: "world", StartTime: 0.5, EndTime: 1.0, Speaker: "Alice"},
+			},
+			startIndex: 1,
+			want:       1.0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := findSpeakerSegmentEnd(tt.timings, tt.startIndex)
+			if got != tt.want {
+				t.Errorf("findSpeakerSegmentEnd() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

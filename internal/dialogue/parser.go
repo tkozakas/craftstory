@@ -2,12 +2,14 @@ package dialogue
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 )
 
 type Line struct {
-	Speaker string
-	Text    string
+	Speaker   string
+	Text      string
+	StickerID int
 }
 
 type Script struct {
@@ -15,6 +17,7 @@ type Script struct {
 }
 
 var linePattern = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9 ]*?)\s*:\s*(.+)$`)
+var stickerPattern = regexp.MustCompile(`^\[s(\d+)\]\s*`)
 
 func Parse(text string) *Script {
 	lines := strings.Split(text, "\n")
@@ -39,10 +42,20 @@ func Parse(text string) *Script {
 			if strings.HasPrefix(text, "(") && strings.HasSuffix(text, ")") {
 				continue
 			}
+
+			stickerID := 0
+			if stickerMatches := stickerPattern.FindStringSubmatch(text); len(stickerMatches) >= 2 {
+				if n, err := strconv.Atoi(stickerMatches[1]); err == nil {
+					stickerID = n
+				}
+				text = strings.TrimPrefix(text, stickerMatches[0])
+			}
+
 			text = stripFormatting(text)
 			script.Lines = append(script.Lines, Line{
-				Speaker: speaker,
-				Text:    text,
+				Speaker:   speaker,
+				Text:      text,
+				StickerID: stickerID,
 			})
 		}
 	}

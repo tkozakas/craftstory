@@ -47,8 +47,8 @@ func TestAdjustTimings(t *testing.T) {
 			wantTimings:  2,
 			wantDuration: 1.0,
 			wantSegments: 1,
-			wantFirst:    tts.WordTiming{Word: "Hello", StartTime: 0, EndTime: 0.5},
-			wantLast:     tts.WordTiming{Word: "World", StartTime: 0.5, EndTime: 1.0},
+			wantFirst:    tts.WordTiming{Word: "Hello", StartTime: 0, EndTime: 0.5, Speaker: "Alice"},
+			wantLast:     tts.WordTiming{Word: "World", StartTime: 0.5, EndTime: 1.0, Speaker: "Alice"},
 		},
 		{
 			name: "twoSegments",
@@ -71,8 +71,8 @@ func TestAdjustTimings(t *testing.T) {
 			wantTimings:  4,
 			wantDuration: 2.0,
 			wantSegments: 2,
-			wantFirst:    tts.WordTiming{Word: "First", StartTime: 0, EndTime: 0.5},
-			wantLast:     tts.WordTiming{Word: "Part", StartTime: 1.5, EndTime: 2.0},
+			wantFirst:    tts.WordTiming{Word: "First", StartTime: 0, EndTime: 0.5, Speaker: "Alice"},
+			wantLast:     tts.WordTiming{Word: "Part", StartTime: 1.5, EndTime: 2.0, Speaker: "Bob"},
 		},
 		{
 			name: "threeSegments",
@@ -84,8 +84,8 @@ func TestAdjustTimings(t *testing.T) {
 			wantTimings:  3,
 			wantDuration: 3.0,
 			wantSegments: 3,
-			wantFirst:    tts.WordTiming{Word: "A", StartTime: 0, EndTime: 1.0},
-			wantLast:     tts.WordTiming{Word: "C", StartTime: 2.0, EndTime: 3.0},
+			wantFirst:    tts.WordTiming{Word: "A", StartTime: 0, EndTime: 1.0, Speaker: "A"},
+			wantLast:     tts.WordTiming{Word: "C", StartTime: 2.0, EndTime: 3.0, Speaker: "C"},
 		},
 		{
 			name:         "emptySegments",
