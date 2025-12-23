@@ -96,6 +96,8 @@ func runCronCmd() {
 	if !*upload && approval != nil {
 		approval.StartBot()
 		defer approval.StopBot()
+
+		go handleApprovals(ctx, pipeline, approval)
 	}
 
 	slog.Info("Starting cron mode", "interval", *interval, "approval", !*upload && approval != nil)
@@ -107,6 +109,11 @@ func runCronCmd() {
 	defer ticker.Stop()
 
 	generate := func() {
+		if approval != nil && approval.Queue().IsFull() {
+			slog.Info("Queue is full, skipping generation")
+			return
+		}
+
 		slog.Info("Generating video from Reddit...")
 		result, err := pipeline.GenerateFromReddit(ctx)
 		if err != nil {
@@ -154,6 +161,42 @@ func runCronCmd() {
 		case <-ticker.C:
 			generate()
 		}
+	}
+}
+
+func handleApprovals(ctx context.Context, pipeline *app.Pipeline, approval *telegram.ApprovalService) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		result, video, err := approval.WaitForResult(ctx)
+		if err != nil {
+			time.Sleep(time.Second)
+			continue
+		}
+
+		if !result.Approved {
+			slog.Info("Video rejected", "title", video.Title)
+			continue
+		}
+
+		slog.Info("Video approved, uploading...", "title", video.Title)
+		resp, err := pipeline.Upload(ctx, app.UploadRequest{
+			VideoPath:   video.VideoPath,
+			Title:       video.Title,
+			Description: video.Script,
+		})
+		if err != nil {
+			slog.Error("Upload failed", "error", err)
+			approval.NotifyUploadFailed(video.Title, err)
+			continue
+		}
+
+		slog.Info("Upload complete", "title", video.Title, "url", resp.URL)
+		approval.NotifyUploadComplete(video.Title, resp.URL)
 	}
 }
 

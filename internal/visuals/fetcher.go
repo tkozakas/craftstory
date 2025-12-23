@@ -17,10 +17,10 @@ type ImageSearcher interface {
 }
 
 type Config struct {
-	DisplayTime float64
-	ImageWidth  int
-	ImageHeight int
-	MinGap      float64
+	MaxDisplayTime float64
+	ImageWidth     int
+	ImageHeight    int
+	MinGap         float64
 }
 
 type FetchRequest struct {
@@ -103,7 +103,12 @@ func (f *Fetcher) fetchSingle(ctx context.Context, imageDir string, index int, c
 	}
 
 	startTime := timings[wordIndex].StartTime
-	endTime := findSpeakerSegmentEnd(timings, wordIndex)
+	segmentEnd := findSpeakerSegmentEnd(timings, wordIndex)
+
+	endTime := segmentEnd
+	if f.cfg.MaxDisplayTime > 0 && (segmentEnd-startTime) > f.cfg.MaxDisplayTime {
+		endTime = startTime + f.cfg.MaxDisplayTime
+	}
 
 	return &video.ImageOverlay{
 		ImagePath: imagePath,

@@ -19,7 +19,7 @@ content:
 
 visuals:
   position: "top"
-  display_time: 2.0
+  max_display_time: 4.0
   image_width: 800
   image_height: 600
 

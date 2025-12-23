@@ -41,10 +41,10 @@ func NewService(opts ServiceOptions) *Service {
 	var fetcher *visuals.Fetcher
 	if opts.ImageSearch != nil {
 		fetcher = visuals.NewFetcher(opts.ImageSearch, visuals.Config{
-			DisplayTime: opts.Config.Visuals.DisplayTime,
-			ImageWidth:  opts.Config.Visuals.ImageWidth,
-			ImageHeight: opts.Config.Visuals.ImageHeight,
-			MinGap:      opts.Config.Visuals.MinGap,
+			MaxDisplayTime: opts.Config.Visuals.MaxDisplayTime,
+			ImageWidth:     opts.Config.Visuals.ImageWidth,
+			ImageHeight:    opts.Config.Visuals.ImageHeight,
+			MinGap:         opts.Config.Visuals.MinGap,
 		})
 	}
 

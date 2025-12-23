@@ -98,11 +98,11 @@ type GCSConfig struct {
 }
 
 type VisualsConfig struct {
-	Position    string  `yaml:"position"`
-	DisplayTime float64 `yaml:"display_time"`
-	ImageWidth  int     `yaml:"image_width"`
-	ImageHeight int     `yaml:"image_height"`
-	MinGap      float64 `yaml:"min_gap"`
+	Position       string  `yaml:"position"`
+	MaxDisplayTime float64 `yaml:"max_display_time"`
+	ImageWidth     int     `yaml:"image_width"`
+	ImageHeight    int     `yaml:"image_height"`
+	MinGap         float64 `yaml:"min_gap"`
 }
 
 type RedditConfig struct {
