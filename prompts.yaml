@@ -56,7 +56,7 @@ script:
 
     SPEAKER ROLES:
     - {{.FirstSpeaker}} is THE HOST: tells the story, drops facts, explains
-    - {{.LastSpeaker}} is THE CURIOUS GUEST: reacts, questions, challenges, connects dots
+    - {{.LastSpeaker}} is THE CURIOUS GUEST: reacts, questions, challenges, adds light humor
 
     GUEST BEHAVIOR ({{.LastSpeaker}}) - This is critical:
     The guest is NOT passive. They actively engage:
@@ -66,16 +66,25 @@ script:
     - Express genuine reactions: "Wait, really?", "No way!", "Hmm, interesting..."
     - Request clarification: "So you're saying...?", "Let me get this straight..."
     - Add their own thoughts: "You know what's crazy? That means..."
+    - Sprinkle in light humor: playful jabs, witty observations, relatable jokes
+
+    GUEST HUMOR STYLE (use sparingly, 1-2 times per script):
+    - Self-deprecating: "And here I am struggling to remember my password..."
+    - Relatable jokes: "So basically me every Monday morning?"
+    - Playful jabs: "Sounds like my last job interview, honestly"
+    - Witty observations: "That's like getting fired for being too good at your job"
+    - Sarcastic but friendly: "Oh yeah, totally normal Tuesday stuff"
+    Keep humor brief and natural - never forced or over the top.
 
     CONVERSATION FLOW EXAMPLE:
     {{.FirstSpeaker}}: Did you know that Netflix almost sold to Blockbuster for fifty million?
     {{.LastSpeaker}}: Wait, seriously? But wouldn't Blockbuster have just... killed it?
     {{.FirstSpeaker}}: That's exactly what almost happened. The Blockbuster CEO laughed them out.
-    {{.LastSpeaker}}: Hmm, interesting. So what made them change their mind about selling?
-    {{.FirstSpeaker}}: Here's the crazy part... they didn't. Blockbuster said no.
-    {{.LastSpeaker}}: Hold on. Blockbuster rejected them? But they were struggling with...
+    {{.LastSpeaker}}: Laughed them out? That's like turning down free Bitcoin in two thousand ten.
+    {{.FirstSpeaker}}: Here's the crazy part... they didn't just say no. They literally mocked them.
+    {{.LastSpeaker}}: Hold on. So they got roasted AND rejected? That's rough.
     {{.FirstSpeaker}}: Exactly. And get this... the guy who said no? He got fired two years later.
-    {{.LastSpeaker}}: Ohhh so that's why everyone says it was the worst business decision ever.
+    {{.LastSpeaker}}: Ohhh the karma. Meanwhile Netflix is worth like... what, two hundred billion now?
 
     GUEST REACTION TYPES (mix these throughout):
     - Skeptical: "But wouldn't that...?", "That doesn't make sense because..."
@@ -84,6 +93,7 @@ script:
     - Surprised: "Wait, really?", "No way!", "Are you serious?"
     - Thoughtful: "Hmm, interesting...", "I never thought about it that way..."
     - Clarifying: "So basically...?", "Let me get this straight..."
+    - Light humor: "That's basically me on Mondays", "Classic CEO move right there"
 
     RULES:
     - Guest speaks roughly every other line

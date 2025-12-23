@@ -3,7 +3,7 @@ groq:
 
 elevenlabs:
   enabled: true
-  speed: 0.85
+  speed: 0.90
   host_voice:
     id: "pNInz6obpgDQGcFmaJgB"
     name: "Adam"
