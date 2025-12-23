@@ -9,66 +9,68 @@ import (
 
 func TestEnforceConstraints(t *testing.T) {
 	tests := []struct {
-		name     string
-		overlays []video.ImageOverlay
-		minGap   float64
-		want     int
+		name        string
+		overlays    []video.ImageOverlay
+		minGap      float64
+		wantCount   int
+		wantEndTime float64
 	}{
 		{
-			name:     "emptyOverlays",
-			overlays: []video.ImageOverlay{},
-			minGap:   4.0,
-			want:     0,
+			name:        "emptyOverlays",
+			overlays:    []video.ImageOverlay{},
+			minGap:      1.0,
+			wantCount:   0,
+			wantEndTime: 0,
 		},
 		{
 			name: "singleOverlay",
 			overlays: []video.ImageOverlay{
 				{ImagePath: "img1.jpg", StartTime: 0, EndTime: 1.5},
 			},
-			minGap: 4.0,
-			want:   1,
+			minGap:      1.0,
+			wantCount:   1,
+			wantEndTime: 1.5,
 		},
 		{
-			name: "allWellSpaced",
+			name: "wellSpaced",
 			overlays: []video.ImageOverlay{
-				{ImagePath: "img1.jpg", StartTime: 0, EndTime: 1.5},
-				{ImagePath: "img2.jpg", StartTime: 6, EndTime: 7.5},
-				{ImagePath: "img3.jpg", StartTime: 12, EndTime: 13.5},
+				{ImagePath: "img1.jpg", StartTime: 0, EndTime: 2},
+				{ImagePath: "img2.jpg", StartTime: 4, EndTime: 6},
 			},
-			minGap: 4.0,
-			want:   3,
+			minGap:      1.0,
+			wantCount:   2,
+			wantEndTime: 2,
 		},
 		{
-			name: "someTooClose",
+			name: "truncatesOverlap",
 			overlays: []video.ImageOverlay{
-				{ImagePath: "img1.jpg", StartTime: 0, EndTime: 1.5},
-				{ImagePath: "img2.jpg", StartTime: 2, EndTime: 3.5},
-				{ImagePath: "img3.jpg", StartTime: 6, EndTime: 7.5},
-				{ImagePath: "img4.jpg", StartTime: 8, EndTime: 9.5},
-				{ImagePath: "img5.jpg", StartTime: 14, EndTime: 15.5},
+				{ImagePath: "img1.jpg", StartTime: 0, EndTime: 5},
+				{ImagePath: "img2.jpg", StartTime: 3, EndTime: 8},
 			},
-			minGap: 4.0,
-			want:   3,
+			minGap:      1.0,
+			wantCount:   2,
+			wantEndTime: 2,
 		},
 		{
-			name: "allTooClose",
+			name: "keepsAllImages",
 			overlays: []video.ImageOverlay{
-				{ImagePath: "img1.jpg", StartTime: 0, EndTime: 1.5},
-				{ImagePath: "img2.jpg", StartTime: 2, EndTime: 3.5},
-				{ImagePath: "img3.jpg", StartTime: 4, EndTime: 5.5},
-				{ImagePath: "img4.jpg", StartTime: 6, EndTime: 7.5},
+				{ImagePath: "img1.jpg", StartTime: 0, EndTime: 4},
+				{ImagePath: "img2.jpg", StartTime: 2, EndTime: 6},
+				{ImagePath: "img3.jpg", StartTime: 4, EndTime: 8},
 			},
-			minGap: 4.0,
-			want:   2,
+			minGap:      1.0,
+			wantCount:   3,
+			wantEndTime: 1,
 		},
 		{
-			name: "exactMinGap",
+			name: "minDuration",
 			overlays: []video.ImageOverlay{
-				{ImagePath: "img1.jpg", StartTime: 0, EndTime: 1.5},
-				{ImagePath: "img2.jpg", StartTime: 5.5, EndTime: 7},
+				{ImagePath: "img1.jpg", StartTime: 0, EndTime: 10},
+				{ImagePath: "img2.jpg", StartTime: 0.3, EndTime: 5},
 			},
-			minGap: 4.0,
-			want:   2,
+			minGap:      1.0,
+			wantCount:   2,
+			wantEndTime: 0.5,
 		},
 	}
 
@@ -76,8 +78,11 @@ func TestEnforceConstraints(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f := &Fetcher{cfg: Config{MinGap: tt.minGap}}
 			got := f.enforceConstraints(tt.overlays)
-			if len(got) != tt.want {
-				t.Errorf("enforceConstraints() returned %d overlays, want %d", len(got), tt.want)
+			if len(got) != tt.wantCount {
+				t.Errorf("enforceConstraints() returned %d overlays, want %d", len(got), tt.wantCount)
+			}
+			if tt.wantCount > 0 && got[0].EndTime != tt.wantEndTime {
+				t.Errorf("enforceConstraints() first overlay end time = %.2f, want %.2f", got[0].EndTime, tt.wantEndTime)
 			}
 		})
 	}

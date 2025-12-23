@@ -106,3 +106,10 @@ func isValidImage(data []byte) bool {
 	_, _, err := image.Decode(bytes.NewReader(data))
 	return err == nil
 }
+
+func isValidGif(data []byte) bool {
+	if len(data) < 100 {
+		return false
+	}
+	return bytes.HasPrefix(data, []byte("GIF87a")) || bytes.HasPrefix(data, []byte("GIF89a"))
+}

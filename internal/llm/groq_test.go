@@ -384,7 +384,7 @@ func TestGenerateVisuals(t *testing.T) {
 			defer server.Close()
 
 			client := newTestClient(t, server.URL)
-			got, err := client.GenerateVisuals(context.Background(), tt.script)
+			got, err := client.GenerateVisuals(context.Background(), tt.script, 5)
 
 			if tt.wantErr {
 				if err == nil {

@@ -56,8 +56,8 @@ func (c *GroqClient) GenerateConversation(ctx context.Context, topic string, spe
 	return c.generate(ctx, c.prompts.System.Conversation, prompt)
 }
 
-func (c *GroqClient) GenerateVisuals(ctx context.Context, script string) ([]VisualCue, error) {
-	prompt, err := c.prompts.RenderVisuals(prompts.VisualsParams{Script: script})
+func (c *GroqClient) GenerateVisuals(ctx context.Context, script string, count int) ([]VisualCue, error) {
+	prompt, err := c.prompts.RenderVisuals(prompts.VisualsParams{Script: script, Count: count})
 	if err != nil {
 		return nil, fmt.Errorf("render prompt: %w", err)
 	}

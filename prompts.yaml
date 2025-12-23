@@ -105,35 +105,47 @@ script:
     - Everything should sound completely real and factual
 
   visuals: |
-    Extract 3-5 visual keywords from this script. Focus on BRANDS and CONCRETE NOUNS.
+    Extract visual keywords from this script. Add an image or meme whenever there's a visual opportunity.
     
-    PRIORITY ORDER (pick from top categories first):
-    1. COMPANY/BRAND NAMES: Microsoft, Google, Apple, Netflix, Facebook, Amazon, Tesla, etc.
-       → Search: "[Brand] logo dark background" or "[Brand] headquarters building"
-    2. MONEY/NUMBERS: million, billion, dollars, thousand
-       → Search: "pile of cash money cinematic" or "gold coins dramatic lighting"
-    3. PEOPLE/ROLES: CEO, engineer, founder, employee, intern
-       → Search: "business [role] silhouette dramatic" or "[role] office professional"
-    4. ACTIONS: fired, hired, sold, bought, launched, failed
-       → Search: "person getting [action] dramatic scene"
-    5. OBJECTS: computer, phone, office, building, car
-       → Search: "[object] dramatic lighting cinematic"
+    ADD VISUALS FOR:
+    - Every brand/company mentioned (Microsoft, Google, Apple, Netflix, etc.)
+    - Every money reference (million, billion, dollars, salary, etc.)
+    - Every person/role (CEO, engineer, founder, intern, etc.)
+    - Every concrete object (computer, phone, office, car, etc.)
+    - Every action that can be visualized (fired, launched, crashed, etc.)
+    - Every reaction or emotion (shocked, confused, excited, etc.) - USE MEMES FOR THESE
+    
+    TYPE SELECTION:
+    - Use "image" for: brands, logos, objects, places, people
+    - Use "gif" for: reactions, emotions, funny moments, dramatic reveals, memes
+    
+    WHEN TO USE GIFS/MEMES:
+    - Reactions: "wait what", "no way", "seriously", "mind blown"
+    - Emotions: shocked, confused, laughing, crying, excited
+    - Drama: "plot twist", "here's the crazy part", "you won't believe"
+    - Humor: any joke or punchline moment
+    
+    SEARCH QUERY STYLE:
+    - Brands: "[Brand] logo dark background"
+    - Money: "money cash pile cinematic"
+    - Memes/Reactions: "[reaction] meme gif" or "[emotion] reaction gif"
+    - People: "business [role] silhouette"
     
     RULES:
-    - Keyword must be EXACTLY as it appears in script (case-insensitive match is fine)
-    - Search query should find a HIGH-QUALITY, DRAMATIC image
-    - For brands: ALWAYS include "logo" or "headquarters" in search
-    - For money: use "cash", "money", "gold" visuals
-    - NEVER use abstract words: success, failure, interesting, crazy
+    - Keyword must be EXACTLY as it appears in script
+    - More visuals = better engagement (aim for one every 5-8 seconds)
+    - Use GIFs for at least 30% of visuals to keep it engaging
+    - NEVER use abstract words without meme context
     
     Script:
     {{.Script}}
     
-    Return JSON with "visuals" array (3-5 items):
+    Return JSON array:
     {"visuals": [
-      {"keyword": "Microsoft", "search_query": "Microsoft logo dark background neon"},
-      {"keyword": "billion", "search_query": "billion dollars cash pile cinematic"},
-      {"keyword": "CEO", "search_query": "CEO businessman silhouette powerful"}
+      {"keyword": "Microsoft", "search_query": "Microsoft logo dark background", "type": "image"},
+      {"keyword": "wait", "search_query": "wait what meme reaction gif", "type": "gif"},
+      {"keyword": "billion", "search_query": "billion dollars cash pile", "type": "image"},
+      {"keyword": "fired", "search_query": "fired reaction meme gif", "type": "gif"}
     ]}
 
 title:

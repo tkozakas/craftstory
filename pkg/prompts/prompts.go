@@ -49,6 +49,7 @@ type ConversationParams struct {
 
 type VisualsParams struct {
 	Script string
+	Count  int
 }
 
 type TitleParams struct {

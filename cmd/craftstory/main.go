@@ -54,7 +54,7 @@ Commands:
   once        Generate a single video
 
 Run options:
-  -interval   Interval between generations (default: 1h)
+  -interval   Interval between generations (default: 15m)
   -upload     Upload directly instead of queueing for approval
 
 Once options:
@@ -63,14 +63,14 @@ Once options:
   -upload     Upload to YouTube after generation
 
 Examples:
-  craftstory run                       # cron mode, generates every hour
-  craftstory run -interval 30m         # cron with 30min interval
+  craftstory run                       # generates every 15 minutes
+  craftstory run -interval 30m         # generates every 30 minutes
   craftstory once -topic "golang tips" # single video
   craftstory once -reddit -upload      # single from Reddit + upload`)
 }
 
 func runCronCmd() {
-	interval := flag.Duration("interval", time.Hour, "Interval between generations")
+	interval := flag.Duration("interval", 15*time.Minute, "Interval between generations")
 	upload := flag.Bool("upload", false, "Upload directly instead of queueing for approval")
 	flag.Parse()
 
@@ -98,15 +98,13 @@ func runCronCmd() {
 		defer approval.StopBot()
 
 		go handleApprovals(ctx, pipeline, approval)
+		go handleGenerations(ctx, pipeline, approval)
 	}
 
 	slog.Info("Starting cron mode", "interval", *interval, "approval", !*upload && approval != nil)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	ticker := time.NewTicker(*interval)
-	defer ticker.Stop()
 
 	generate := func() {
 		if approval != nil && approval.Queue().IsFull() {
@@ -149,6 +147,9 @@ func runCronCmd() {
 		}
 	}
 
+	ticker := time.NewTicker(*interval)
+	defer ticker.Stop()
+
 	generate()
 
 	for {
@@ -166,15 +167,12 @@ func runCronCmd() {
 
 func handleApprovals(ctx context.Context, pipeline *app.Pipeline, approval *telegram.ApprovalService) {
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
 		result, video, err := approval.WaitForResult(ctx)
 		if err != nil {
-			time.Sleep(time.Second)
+			return
+		}
+
+		if video == nil {
 			continue
 		}
 
@@ -197,6 +195,40 @@ func handleApprovals(ctx context.Context, pipeline *app.Pipeline, approval *tele
 
 		slog.Info("Upload complete", "title", video.Title, "url", resp.URL)
 		approval.NotifyUploadComplete(video.Title, resp.URL)
+	}
+}
+
+func handleGenerations(ctx context.Context, pipeline *app.Pipeline, approval *telegram.ApprovalService) {
+	for {
+		req, err := approval.WaitForGenerationRequest(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			time.Sleep(time.Second)
+			continue
+		}
+
+		slog.Info("Processing generation request", "topic", req.Topic, "from_reddit", req.FromReddit, "chat_id", req.ChatID)
+		approval.NotifyGenerating(req.ChatID, req.Topic)
+
+		var result *app.GenerateResult
+		if req.FromReddit {
+			result, err = pipeline.GenerateFromReddit(ctx)
+		} else {
+			result, err = pipeline.Generate(ctx, req.Topic)
+		}
+
+		if err != nil {
+			slog.Error("Generation failed", "error", err)
+			approval.NotifyGenerationFailed(req.ChatID, err.Error())
+			approval.FailGeneration(req.ChatID)
+			continue
+		}
+
+		slog.Info("Video generated", "title", result.Title, "path", result.VideoPath)
+		approval.NotifyGenerationComplete(req.ChatID, result.VideoPath, result.Title, result.ScriptContent)
+		approval.CompleteGeneration(req.ChatID)
 	}
 }
 

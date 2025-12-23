@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"sort"
 	"strings"
 
 	"craftstory/internal/llm"
@@ -13,6 +14,7 @@ import (
 
 type ImageSearcher interface {
 	Search(ctx context.Context, query string, count int) ([]SearchResult, error)
+	SearchGif(ctx context.Context, query string, count int) ([]SearchResult, error)
 	DownloadImage(ctx context.Context, imageURL string) ([]byte, error)
 }
 
@@ -67,6 +69,11 @@ func (f *Fetcher) Fetch(ctx context.Context, req FetchRequest) []video.ImageOver
 		}
 	}
 
+	// Sort overlays by start time before enforcing constraints
+	sort.Slice(overlays, func(i, j int) bool {
+		return overlays[i].StartTime < overlays[j].StartTime
+	})
+
 	slog.Info("Image fetch complete", "requested", len(req.Visuals), "success", len(overlays))
 	return f.enforceConstraints(overlays)
 }
@@ -79,26 +86,35 @@ func (f *Fetcher) fetchSingle(ctx context.Context, imageDir string, index int, c
 	}
 	slog.Info("Found keyword in timings", "keyword", cue.Keyword, "word_index", wordIndex, "time", timings[wordIndex].StartTime)
 
-	results, err := f.imageSearch.Search(ctx, cue.SearchQuery, 5)
+	isGif := cue.Type == "gif"
+	var results []SearchResult
+	var err error
+
+	if isGif {
+		results, err = f.imageSearch.SearchGif(ctx, cue.SearchQuery, 5)
+	} else {
+		results, err = f.imageSearch.Search(ctx, cue.SearchQuery, 5)
+	}
+
 	if err != nil {
-		slog.Warn("Image search failed", "query", cue.SearchQuery, "error", err)
+		slog.Warn("Search failed", "query", cue.SearchQuery, "type", cue.Type, "error", err)
 		return nil
 	}
 	if len(results) == 0 {
 		slog.Warn("No search results returned", "query", cue.SearchQuery)
 		return nil
 	}
-	slog.Info("Got search results", "query", cue.SearchQuery, "count", len(results))
+	slog.Info("Got search results", "query", cue.SearchQuery, "type", cue.Type, "count", len(results))
 
-	imageData, ext := f.downloadValid(ctx, results)
+	imageData, ext := f.downloadValid(ctx, results, isGif)
 	if imageData == nil {
-		slog.Warn("Failed to download any valid image", "query", cue.SearchQuery)
+		slog.Warn("Failed to download any valid media", "query", cue.SearchQuery)
 		return nil
 	}
 
-	imagePath := imagePath(imageDir, index, ext)
-	if err := os.WriteFile(imagePath, imageData, 0644); err != nil {
-		slog.Warn("Failed to write image file", "path", imagePath, "error", err)
+	filePath := imagePath(imageDir, index, ext)
+	if err := os.WriteFile(filePath, imageData, 0644); err != nil {
+		slog.Warn("Failed to write file", "path", filePath, "error", err)
 		return nil
 	}
 
@@ -111,21 +127,35 @@ func (f *Fetcher) fetchSingle(ctx context.Context, imageDir string, index int, c
 	}
 
 	return &video.ImageOverlay{
-		ImagePath: imagePath,
+		ImagePath: filePath,
 		StartTime: startTime,
 		EndTime:   endTime,
 		Width:     f.cfg.ImageWidth,
 		Height:    f.cfg.ImageHeight,
+		IsGif:     isGif,
 	}
 }
 
-func (f *Fetcher) downloadValid(ctx context.Context, results []SearchResult) ([]byte, string) {
+func (f *Fetcher) downloadValid(ctx context.Context, results []SearchResult, isGif bool) ([]byte, string) {
 	for i, result := range results {
-		slog.Debug("Trying to download image", "index", i, "url", result.ImageURL)
+		slog.Debug("Trying to download", "index", i, "url", result.ImageURL)
 		data, err := f.imageSearch.DownloadImage(ctx, result.ImageURL)
 		if err != nil {
 			slog.Debug("Download failed", "error", err)
 			continue
+		}
+
+		if isGif {
+			if !isValidGif(data) {
+				slog.Debug("Invalid GIF format", "size", len(data))
+				continue
+			}
+			if len(data) < 5000 {
+				slog.Debug("GIF too small", "size", len(data))
+				continue
+			}
+			slog.Debug("GIF downloaded successfully", "size", len(data))
+			return data, ".gif"
 		}
 
 		if !isValidImage(data) {
@@ -152,14 +182,23 @@ func (f *Fetcher) enforceConstraints(overlays []video.ImageOverlay) []video.Imag
 		return overlays
 	}
 
-	filtered := make([]video.ImageOverlay, 0, len(overlays))
-	filtered = append(filtered, overlays[0])
-
 	for i := 1; i < len(overlays); i++ {
-		gap := overlays[i].StartTime - filtered[len(filtered)-1].EndTime
-		if gap >= f.cfg.MinGap {
-			filtered = append(filtered, overlays[i])
+		prevEnd := overlays[i-1].EndTime
+		currStart := overlays[i].StartTime
+
+		if currStart < prevEnd+f.cfg.MinGap {
+			newEnd := currStart - f.cfg.MinGap
+			if newEnd < overlays[i-1].StartTime+0.5 {
+				newEnd = overlays[i-1].StartTime + 0.5
+			}
+			slog.Debug("Truncating overlay", "index", i-1, "old_end", prevEnd, "new_end", newEnd)
+			overlays[i-1].EndTime = newEnd
 		}
 	}
-	return filtered
+
+	for i, o := range overlays {
+		slog.Info("Final overlay", "index", i, "path", o.ImagePath, "start", o.StartTime, "end", o.EndTime)
+	}
+
+	return overlays
 }

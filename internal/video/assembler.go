@@ -60,6 +60,7 @@ type ImageOverlay struct {
 	EndTime   float64
 	Width     int
 	Height    int
+	IsGif     bool
 }
 
 type AssembleRequest struct {
@@ -223,10 +224,17 @@ func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, 
 		scaledName := fmt.Sprintf("img%d", i)
 		outputName := fmt.Sprintf("v%d", i)
 
-		filters = append(filters, fmt.Sprintf(
-			"[%d:v]scale=%d:%d,format=rgba[%s]",
-			inputIdx, overlay.Width, overlay.Height, scaledName,
-		))
+		if overlay.IsGif {
+			filters = append(filters, fmt.Sprintf(
+				"[%d:v]scale=%d:%d,format=rgba[%s]",
+				inputIdx, overlay.Width, overlay.Height, scaledName,
+			))
+		} else {
+			filters = append(filters, fmt.Sprintf(
+				"[%d:v]scale=%d:%d,format=rgba[%s]",
+				inputIdx, overlay.Width, overlay.Height, scaledName,
+			))
+		}
 
 		x := "(W-w)/2"
 		y := "100"
@@ -268,7 +276,11 @@ func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTi
 	}
 
 	for _, overlay := range overlays {
-		args = append(args, "-i", overlay.ImagePath)
+		if overlay.IsGif {
+			args = append(args, "-ignore_loop", "0", "-i", overlay.ImagePath)
+		} else {
+			args = append(args, "-i", overlay.ImagePath)
+		}
 	}
 
 	args = append(args,
@@ -276,13 +288,12 @@ func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTi
 		"-map", "[v]",
 		"-map", "[a]",
 		"-c:v", "libx264",
-		"-crf", "28",
-		"-maxrate", "4M",
-		"-bufsize", "8M",
+		"-preset", "ultrafast",
+		"-threads", "0",
+		"-crf", "23",
 		"-c:a", "aac",
 		"-b:a", "128k",
 		"-ar", "44100",
-		"-preset", "fast",
 		"-movflags", "+faststart",
 		outputPath,
 	)
@@ -457,9 +468,10 @@ func (a *Assembler) prepareClip(ctx context.Context, clipPath string, maxDuratio
 		"-t", fmt.Sprintf("%.2f", targetDuration),
 		"-vf", fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d", a.width, a.height, a.width, a.height),
 		"-c:v", "libx264",
+		"-preset", "ultrafast",
+		"-threads", "0",
 		"-c:a", "aac",
 		"-ar", "44100",
-		"-preset", "fast",
 		outputClip,
 	}
 

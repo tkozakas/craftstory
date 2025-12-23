@@ -283,8 +283,14 @@ func (generation *generationContext) fetchImages(script string, timings []tts.Wo
 		return nil
 	}
 
-	slog.Info("Generating visual cues from script...")
-	cues, err := generation.pipeline.service.LLM().GenerateVisuals(generation.ctx, script)
+	config := generation.pipeline.service.Config()
+	count := config.Visuals.Count
+	if count <= 0 {
+		count = 5
+	}
+
+	slog.Info("Generating visual cues from script...", "count", count)
+	cues, err := generation.pipeline.service.LLM().GenerateVisuals(generation.ctx, script, count)
 	if err != nil {
 		slog.Warn("Failed to generate visuals", "error", err)
 		return nil

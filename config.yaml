@@ -22,6 +22,7 @@ visuals:
   max_display_time: 4.0
   image_width: 800
   image_height: 600
+  count: 8
 
 video:
   background_dir: "./assets/backgrounds"
