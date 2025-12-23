@@ -18,6 +18,7 @@ const (
 	defaultModel           = "eleven_multilingual_v2"
 	defaultVoiceStability  = 0.5
 	defaultVoiceSimilarity = 0.75
+	defaultSpeed           = 1.0
 )
 
 type ElevenLabsClient struct {
@@ -25,10 +26,12 @@ type ElevenLabsClient struct {
 	httpClient *http.Client
 	voiceID    string
 	baseURL    string
+	speed      float64
 }
 
 type ElevenLabsOptions struct {
 	VoiceID string
+	Speed   float64
 }
 
 type timestampResponse struct {
@@ -47,10 +50,15 @@ func NewElevenLabsClient(apiKey string, opts ElevenLabsOptions) *ElevenLabsClien
 	if voiceID == "" {
 		voiceID = "pNInz6obpgDQGcFmaJgB" // Adam
 	}
+	speed := opts.Speed
+	if speed <= 0 {
+		speed = defaultSpeed
+	}
 	return &ElevenLabsClient{
 		apiKey:     apiKey,
 		httpClient: &http.Client{Timeout: elevenLabsTimeout},
 		voiceID:    voiceID,
+		speed:      speed,
 	}
 }
 
@@ -87,6 +95,7 @@ func (c *ElevenLabsClient) generateWithTimestamps(ctx context.Context, text, voi
 		"voice_settings": map[string]any{
 			"stability":        defaultVoiceStability,
 			"similarity_boost": defaultVoiceSimilarity,
+			"speed":            c.speed,
 		},
 	}
 

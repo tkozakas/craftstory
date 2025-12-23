@@ -45,6 +45,7 @@ type ElevenLabsConfig struct {
 	HostVoice      VoiceConfig `yaml:"host_voice"`
 	GuestVoice     VoiceConfig `yaml:"guest_voice"`
 	TTSParallelism int         `yaml:"tts_parallelism"`
+	Speed          float64     `yaml:"speed"`
 }
 
 type VoiceConfig struct {
