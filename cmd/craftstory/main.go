@@ -56,28 +56,36 @@ Commands:
 Run options:
   -interval   Interval between generations (default: 15m)
   -upload     Upload directly instead of queueing for approval
+  -verbose    Enable debug logging
 
 Once options:
   -topic      Topic for video generation
   -reddit     Use random Reddit post as topic
   -upload     Upload to YouTube after generation
+  -verbose    Enable debug logging
 
 Examples:
   craftstory run                       # generates every 15 minutes
   craftstory run -interval 30m         # generates every 30 minutes
   craftstory once -topic "golang tips" # single video
-  craftstory once -reddit -upload      # single from Reddit + upload`)
+  craftstory once -reddit -upload      # single from Reddit + upload
+  craftstory once -topic "test" -verbose  # with debug logs`)
 }
 
 func runCronCmd() {
 	interval := flag.Duration("interval", 15*time.Minute, "Interval between generations")
 	upload := flag.Bool("upload", false, "Upload directly instead of queueing for approval")
+	verbose := flag.Bool("verbose", false, "Enable verbose/debug logging")
 	flag.Parse()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	logLevel := slog.LevelInfo
+	if *verbose {
+		logLevel = slog.LevelDebug
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})))
 
 	cfg, err := config.Load(ctx)
 	if err != nil {
@@ -85,7 +93,7 @@ func runCronCmd() {
 		os.Exit(1)
 	}
 
-	service, approval, err := buildService(cfg)
+	service, approval, err := buildService(cfg, *verbose)
 	if err != nil {
 		slog.Error("Failed to build service", "error", err)
 		os.Exit(1)
@@ -236,6 +244,7 @@ func runOnceCmd() {
 	topic := flag.String("topic", "", "Topic for video generation")
 	useReddit := flag.Bool("reddit", false, "Generate video from Reddit topic")
 	upload := flag.Bool("upload", false, "Upload to YouTube after generation")
+	verbose := flag.Bool("verbose", false, "Enable verbose/debug logging")
 	flag.Parse()
 
 	if *topic == "" && !*useReddit {
@@ -246,7 +255,11 @@ func runOnceCmd() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	logLevel := slog.LevelInfo
+	if *verbose {
+		logLevel = slog.LevelDebug
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})))
 
 	cfg, err := config.Load(ctx)
 	if err != nil {
@@ -254,7 +267,7 @@ func runOnceCmd() {
 		os.Exit(1)
 	}
 
-	service, _, err := buildService(cfg)
+	service, _, err := buildService(cfg, *verbose)
 	if err != nil {
 		slog.Error("Failed to build service", "error", err)
 		os.Exit(1)
@@ -297,7 +310,7 @@ func runOnceCmd() {
 	}
 }
 
-func buildService(cfg *config.Config) (*app.Service, *telegram.ApprovalService, error) {
+func buildService(cfg *config.Config, verbose bool) (*app.Service, *telegram.ApprovalService, error) {
 	p, err := prompts.Load()
 	if err != nil {
 		return nil, nil, err
@@ -353,6 +366,7 @@ func buildService(cfg *config.Config) (*app.Service, *telegram.ApprovalService, 
 		MusicVolume:  cfg.Music.Volume,
 		MusicFadeIn:  cfg.Music.FadeIn,
 		MusicFadeOut: cfg.Music.FadeOut,
+		Verbose:      verbose,
 	})
 
 	redditClient := reddit.NewClient()
