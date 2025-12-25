@@ -23,6 +23,7 @@ const (
 	videoEndBuffer = 1.5
 	defaultWidth   = 1080
 	defaultHeight  = 1920
+	maxOverlays    = 6 // limit overlays to avoid slow encoding
 )
 
 type Assembler struct {
@@ -235,11 +236,17 @@ func (a *Assembler) prepareMainPath(outputPath string) (string, func()) {
 
 func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, musicPath string, duration float64) string {
 	scale := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d", a.width, a.height, a.width, a.height)
-	hwSuffix := getEncoder().filterSuffix
 	audio := a.buildAudioFilter(musicPath, duration)
 
+	hwSuffix := ""
 	if len(overlays) == 0 {
+		hwSuffix = getEncoder().filterSuffix
 		return fmt.Sprintf("[0:v]%s,ass=%s%s[v];%s", scale, assPath, hwSuffix, audio)
+	}
+
+	if len(overlays) > maxOverlays {
+		a.log("limiting overlays", "from", len(overlays), "to", maxOverlays)
+		overlays = overlays[:maxOverlays]
 	}
 
 	inputOffset := 2
@@ -258,7 +265,7 @@ func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, 
 		lastOut = out
 	}
 
-	filters = append(filters, fmt.Sprintf("[%s]null%s[v]", lastOut, hwSuffix))
+	filters = append(filters, fmt.Sprintf("[%s]null[v]", lastOut))
 	filters = append(filters, audio)
 	return strings.Join(filters, ";")
 }
@@ -277,6 +284,9 @@ func (a *Assembler) buildAudioFilter(musicPath string, duration float64) string 
 
 func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTime, duration float64, filterComplex string, overlays []ImageOverlay, outputPath string) []string {
 	enc := getEncoder()
+	if len(overlays) > 0 {
+		enc = softwareEncoder
+	}
 	videoDur := duration + videoEndBuffer
 
 	args := []string{"-y", "-threads", "0"}
@@ -302,7 +312,12 @@ func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTi
 
 func (a *Assembler) runFFmpeg(ctx context.Context, args []string) error {
 	cmd := exec.CommandContext(ctx, a.ffmpeg, args...)
-	out, err := cmd.CombinedOutput()
+
+	if a.verbose {
+		cmd.Stderr = os.Stderr
+	}
+
+	out, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("ffmpeg: %w, output: %s", err, out)
 	}
