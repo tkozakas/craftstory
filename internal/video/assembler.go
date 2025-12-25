@@ -287,10 +287,10 @@ func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTi
 		"-filter_complex", filterComplex,
 		"-map", "[v]",
 		"-map", "[a]",
-		"-c:v", "libx264",
-		"-preset", "ultrafast",
-		"-threads", "0",
-		"-crf", "23",
+	)
+
+	args = append(args, a.getVideoEncoderArgs()...)
+	args = append(args,
 		"-c:a", "aac",
 		"-b:a", "128k",
 		"-ar", "44100",
@@ -299,6 +299,36 @@ func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTi
 	)
 
 	return args
+}
+
+func (a *Assembler) getVideoEncoderArgs() []string {
+	if hasNVENC() {
+		return []string{
+			"-c:v", "h264_nvenc",
+			"-preset", "p1",
+			"-tune", "ll",
+			"-rc", "vbr",
+			"-cq", "28",
+			"-pix_fmt", "yuv420p",
+		}
+	}
+	return []string{
+		"-c:v", "libx264",
+		"-preset", "ultrafast",
+		"-tune", "fastdecode",
+		"-threads", "0",
+		"-crf", "28",
+		"-pix_fmt", "yuv420p",
+	}
+}
+
+func hasNVENC() bool {
+	cmd := exec.Command("ffmpeg", "-hide_banner", "-encoders")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(output), "h264_nvenc")
 }
 
 func (a *Assembler) getVideoDuration(ctx context.Context, path string) (float64, error) {

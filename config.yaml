@@ -4,6 +4,8 @@ groq:
 elevenlabs:
   enabled: true
   speed: 0.90
+  stability: 0.5
+  similarity: 0.75
   host_voice:
     id: "pNInz6obpgDQGcFmaJgB"
     name: "Adam"

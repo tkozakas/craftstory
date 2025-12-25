@@ -4,9 +4,14 @@ YouTube Shorts automation with AI voiceover.
 
 ## Setup
 
+- [mise](https://mise.jdx.dev)
+- ffmpeg
+
 ```bash
-sudo apt install ffmpeg  # or: brew install ffmpeg
-task setup
+curl https://mise.run | sh && export PATH="$HOME/.local/bin:$PATH"
+sudo apt install ffmpeg
+mise install
+mise exec -- task setup
 ```
 
 ### Manual Setup
@@ -17,6 +22,14 @@ Create a `.env` file instead:
 GROQ_API_KEY=gsk_...
 ELEVENLABS_API_KEY=sk_...
 TELEGRAM_BOT_TOKEN=123456:ABC...  # optional
+
+# For YouTube uploads
+YOUTUBE_CLIENT_ID=...
+YOUTUBE_CLIENT_SECRET=...
+
+# For image search in videos
+GOOGLE_SEARCH_API_KEY=...
+GOOGLE_SEARCH_ENGINE_ID=...
 ```
 
 ## Usage

@@ -9,29 +9,47 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 const (
-	elevenLabsBaseURL      = "https://api.elevenlabs.io/v1"
-	elevenLabsTimeout      = 120 * time.Second
-	defaultModel           = "eleven_multilingual_v2"
-	defaultVoiceStability  = 0.5
-	defaultVoiceSimilarity = 0.75
-	defaultSpeed           = 1.0
+	elevenLabsBaseURL = "https://api.elevenlabs.io/v1"
+	elevenLabsTimeout = 120 * time.Second
+	elevenLabsModel   = "eleven_multilingual_v2"
 )
 
-type ElevenLabsClient struct {
-	apiKey     string
+type elevenLabsClient struct {
+	apiKeys    []string
+	keyIndex   uint64
 	httpClient *http.Client
 	voiceID    string
 	baseURL    string
 	speed      float64
+	stability  float64
+	similarity float64
 }
 
-type ElevenLabsOptions struct {
-	VoiceID string
-	Speed   float64
+type ElevenLabsConfig struct {
+	APIKeys    []string
+	VoiceID    string
+	Speed      float64
+	Stability  float64
+	Similarity float64
+}
+
+type elevenLabsOption func(*elevenLabsClient)
+
+func withBaseURL(url string) elevenLabsOption {
+	return func(c *elevenLabsClient) {
+		c.baseURL = url
+	}
+}
+
+func withHTTPClient(client *http.Client) elevenLabsOption {
+	return func(c *elevenLabsClient) {
+		c.httpClient = client
+	}
 }
 
 type timestampResponse struct {
@@ -45,24 +63,45 @@ type alignment struct {
 	CharacterEndTimes   []float64 `json:"character_end_times_seconds"`
 }
 
-func NewElevenLabsClient(apiKey string, opts ElevenLabsOptions) *ElevenLabsClient {
-	voiceID := opts.VoiceID
-	if voiceID == "" {
-		voiceID = "pNInz6obpgDQGcFmaJgB" // Adam
+func NewElevenLabsClient(cfg ElevenLabsConfig) Provider {
+	keys := cfg.APIKeys
+	if len(keys) == 0 {
+		keys = []string{""}
 	}
-	speed := opts.Speed
-	if speed <= 0 {
-		speed = defaultSpeed
-	}
-	return &ElevenLabsClient{
-		apiKey:     apiKey,
+
+	return &elevenLabsClient{
+		apiKeys:    keys,
 		httpClient: &http.Client{Timeout: elevenLabsTimeout},
-		voiceID:    voiceID,
-		speed:      speed,
+		voiceID:    cfg.VoiceID,
+		speed:      cfg.Speed,
+		stability:  cfg.Stability,
+		similarity: cfg.Similarity,
 	}
 }
 
-func (c *ElevenLabsClient) GenerateSpeech(ctx context.Context, text string) ([]byte, error) {
+func newElevenLabsClient(cfg ElevenLabsConfig, opts ...elevenLabsOption) *elevenLabsClient {
+	keys := cfg.APIKeys
+	if len(keys) == 0 {
+		keys = []string{""}
+	}
+
+	c := &elevenLabsClient{
+		apiKeys:    keys,
+		httpClient: &http.Client{Timeout: elevenLabsTimeout},
+		voiceID:    cfg.VoiceID,
+		speed:      cfg.Speed,
+		stability:  cfg.Stability,
+		similarity: cfg.Similarity,
+	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	return c
+}
+
+func (c *elevenLabsClient) GenerateSpeech(ctx context.Context, text string) ([]byte, error) {
 	result, err := c.generateWithTimestamps(ctx, text, c.voiceID)
 	if err != nil {
 		return nil, err
@@ -70,11 +109,11 @@ func (c *ElevenLabsClient) GenerateSpeech(ctx context.Context, text string) ([]b
 	return result.Audio, nil
 }
 
-func (c *ElevenLabsClient) GenerateSpeechWithTimings(ctx context.Context, text string) (*SpeechResult, error) {
+func (c *elevenLabsClient) GenerateSpeechWithTimings(ctx context.Context, text string) (*SpeechResult, error) {
 	return c.generateWithTimestamps(ctx, text, c.voiceID)
 }
 
-func (c *ElevenLabsClient) GenerateSpeechWithVoice(ctx context.Context, text string, voice VoiceConfig) (*SpeechResult, error) {
+func (c *elevenLabsClient) GenerateSpeechWithVoice(ctx context.Context, text string, voice VoiceConfig) (*SpeechResult, error) {
 	voiceID := voice.ID
 	if voiceID == "" {
 		voiceID = c.voiceID
@@ -82,19 +121,97 @@ func (c *ElevenLabsClient) GenerateSpeechWithVoice(ctx context.Context, text str
 	return c.generateWithTimestamps(ctx, text, voiceID)
 }
 
-func (c *ElevenLabsClient) generateWithTimestamps(ctx context.Context, text, voiceID string) (*SpeechResult, error) {
+func (c *elevenLabsClient) nextAPIKey() string {
+	if len(c.apiKeys) == 1 {
+		return c.apiKeys[0]
+	}
+	idx := atomic.AddUint64(&c.keyIndex, 1)
+	return c.apiKeys[idx%uint64(len(c.apiKeys))]
+}
+
+func (c *elevenLabsClient) getKeyAtOffset(offset int) string {
+	idx := atomic.LoadUint64(&c.keyIndex)
+	return c.apiKeys[(idx+uint64(offset))%uint64(len(c.apiKeys))]
+}
+
+func (c *elevenLabsClient) generateWithTimestamps(ctx context.Context, text, voiceID string) (*SpeechResult, error) {
+	url := c.buildURL(voiceID)
+
+	startKey := c.nextAPIKey()
+	result, err := c.doRequestWithKey(ctx, url, text, startKey)
+	if err == nil {
+		return result, nil
+	}
+	if !isQuotaError(err) {
+		return nil, err
+	}
+
+	for i := 1; i < len(c.apiKeys); i++ {
+		key := c.getKeyAtOffset(i)
+		if key == startKey {
+			continue
+		}
+		result, err = c.doRequestWithKey(ctx, url, text, key)
+		if err == nil {
+			return result, nil
+		}
+		if !isQuotaError(err) {
+			return nil, err
+		}
+	}
+
+	return nil, fmt.Errorf("all API keys exhausted: %w", err)
+}
+
+func (c *elevenLabsClient) doRequestWithKey(ctx context.Context, url, text, apiKey string) (*SpeechResult, error) {
+	req, err := c.buildRequestWithKey(ctx, url, text, apiKey)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("send request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("elevenlabs: %s - %s", resp.Status, string(body))
+	}
+
+	return c.parseResponse(text, body)
+}
+
+func isQuotaError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "quota_exceeded") ||
+		strings.Contains(msg, "rate_limit") ||
+		strings.Contains(msg, "429")
+}
+
+func (c *elevenLabsClient) buildURL(voiceID string) string {
 	base := c.baseURL
 	if base == "" {
 		base = elevenLabsBaseURL
 	}
-	url := fmt.Sprintf("%s/text-to-speech/%s/with-timestamps", base, voiceID)
+	return fmt.Sprintf("%s/text-to-speech/%s/with-timestamps", base, voiceID)
+}
 
+func (c *elevenLabsClient) buildRequestWithKey(ctx context.Context, url, text, apiKey string) (*http.Request, error) {
 	payload := map[string]any{
 		"text":     text,
-		"model_id": defaultModel,
+		"model_id": elevenLabsModel,
 		"voice_settings": map[string]any{
-			"stability":        defaultVoiceStability,
-			"similarity_boost": defaultVoiceSimilarity,
+			"stability":        c.stability,
+			"similarity_boost": c.similarity,
 			"speed":            c.speed,
 		},
 	}
@@ -110,23 +227,12 @@ func (c *ElevenLabsClient) generateWithTimestamps(ctx context.Context, text, voi
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("xi-api-key", c.apiKey)
+	req.Header.Set("xi-api-key", apiKey)
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("send request: %w", err)
-	}
-	defer resp.Body.Close()
+	return req, nil
+}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("elevenlabs: %s - %s", resp.Status, string(body))
-	}
-
+func (c *elevenLabsClient) parseResponse(text string, body []byte) (*SpeechResult, error) {
 	var tsResp timestampResponse
 	if err := json.Unmarshal(body, &tsResp); err != nil {
 		return nil, fmt.Errorf("parse response: %w", err)
@@ -137,15 +243,13 @@ func (c *ElevenLabsClient) generateWithTimestamps(ctx context.Context, text, voi
 		return nil, fmt.Errorf("decode audio: %w", err)
 	}
 
-	timings := c.parseTimings(text, tsResp.Alignment)
-
 	return &SpeechResult{
 		Audio:   audio,
-		Timings: timings,
+		Timings: parseTimings(text, tsResp.Alignment),
 	}, nil
 }
 
-func (c *ElevenLabsClient) parseTimings(text string, align *alignment) []WordTiming {
+func parseTimings(text string, align *alignment) []WordTiming {
 	if align == nil || len(align.Characters) == 0 {
 		return estimateTimings(text, nil)
 	}

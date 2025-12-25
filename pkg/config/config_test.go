@@ -115,3 +115,101 @@ elevenlabs:
 		t.Errorf("GuestVoice.ID = %q, want bella-id", cfg.ElevenLabs.GuestVoice.ID)
 	}
 }
+
+func TestLoadElevenLabsMultipleKeys(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	_ = os.Chdir(tmp)
+
+	_ = os.WriteFile(filepath.Join(tmp, "config.yaml"), []byte("groq:\n  model: x"), 0644)
+
+	t.Setenv("ELEVENLABS_API_KEYS", "key1, key2, key3")
+
+	cfg, err := Load(context.Background())
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if len(cfg.ElevenLabsAPIKeys) != 3 {
+		t.Fatalf("ElevenLabsAPIKeys length = %d, want 3", len(cfg.ElevenLabsAPIKeys))
+	}
+	expected := []string{"key1", "key2", "key3"}
+	for i, k := range expected {
+		if cfg.ElevenLabsAPIKeys[i] != k {
+			t.Errorf("ElevenLabsAPIKeys[%d] = %q, want %q", i, cfg.ElevenLabsAPIKeys[i], k)
+		}
+	}
+}
+
+func TestLoadElevenLabsSingleKeyFallback(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	_ = os.Chdir(tmp)
+
+	_ = os.WriteFile(filepath.Join(tmp, "config.yaml"), []byte("groq:\n  model: x"), 0644)
+
+	t.Setenv("ELEVENLABS_API_KEY", "single-key")
+
+	cfg, err := Load(context.Background())
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if len(cfg.ElevenLabsAPIKeys) != 1 {
+		t.Fatalf("ElevenLabsAPIKeys length = %d, want 1", len(cfg.ElevenLabsAPIKeys))
+	}
+	if cfg.ElevenLabsAPIKeys[0] != "single-key" {
+		t.Errorf("ElevenLabsAPIKeys[0] = %q, want single-key", cfg.ElevenLabsAPIKeys[0])
+	}
+}
+
+func TestParseAPIKeys(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{
+			name:  "single",
+			input: "key1",
+			want:  []string{"key1"},
+		},
+		{
+			name:  "multiple",
+			input: "key1,key2,key3",
+			want:  []string{"key1", "key2", "key3"},
+		},
+		{
+			name:  "withSpaces",
+			input: "key1, key2 , key3",
+			want:  []string{"key1", "key2", "key3"},
+		},
+		{
+			name:  "emptyEntries",
+			input: "key1,,key2",
+			want:  []string{"key1", "key2"},
+		},
+		{
+			name:  "empty",
+			input: "",
+			want:  nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseAPIKeys(tt.input)
+			if len(got) != len(tt.want) {
+				t.Errorf("parseAPIKeys(%q) length = %d, want %d", tt.input, len(got), len(tt.want))
+				return
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("parseAPIKeys(%q)[%d] = %q, want %q", tt.input, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}

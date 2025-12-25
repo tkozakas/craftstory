@@ -310,9 +310,16 @@ func buildService(cfg *config.Config) (*app.Service, *telegram.ApprovalService, 
 
 	var ttsProvider tts.Provider
 	if cfg.ElevenLabs.Enabled {
-		ttsProvider = tts.NewElevenLabsClient(cfg.ElevenLabsAPIKey, tts.ElevenLabsOptions{
-			VoiceID: cfg.ElevenLabs.HostVoice.ID,
-			Speed:   cfg.ElevenLabs.Speed,
+		apiKeys := cfg.ElevenLabsAPIKeys
+		if len(apiKeys) == 0 && cfg.ElevenLabsAPIKey != "" {
+			apiKeys = []string{cfg.ElevenLabsAPIKey}
+		}
+		ttsProvider = tts.NewElevenLabsClient(tts.ElevenLabsConfig{
+			APIKeys:    apiKeys,
+			VoiceID:    cfg.ElevenLabs.HostVoice.ID,
+			Speed:      cfg.ElevenLabs.Speed,
+			Stability:  cfg.ElevenLabs.Stability,
+			Similarity: cfg.ElevenLabs.Similarity,
 		})
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
 	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
@@ -22,6 +23,7 @@ type Config struct {
 	GoogleSearchEngineID string
 	TelegramBotToken     string
 	ElevenLabsAPIKey     string
+	ElevenLabsAPIKeys    []string
 
 	Groq       GroqConfig       `yaml:"groq"`
 	ElevenLabs ElevenLabsConfig `yaml:"elevenlabs"`
@@ -46,6 +48,8 @@ type ElevenLabsConfig struct {
 	GuestVoice     VoiceConfig `yaml:"guest_voice"`
 	TTSParallelism int         `yaml:"tts_parallelism"`
 	Speed          float64     `yaml:"speed"`
+	Stability      float64     `yaml:"stability"`
+	Similarity     float64     `yaml:"similarity"`
 }
 
 type VoiceConfig struct {
@@ -172,6 +176,36 @@ func (cfg *Config) loadSecrets(ctx context.Context) {
 		}
 		*s.dest = os.Getenv(s.envName)
 	}
+
+	cfg.loadElevenLabsKeys(ctx, client)
+}
+
+func (cfg *Config) loadElevenLabsKeys(ctx context.Context, client *secretmanager.Client) {
+	if client != nil && cfg.GCPProject != "" {
+		if val, err := accessSecret(ctx, client, cfg.GCPProject, "elevenlabs-api-keys"); err == nil && val != "" {
+			cfg.ElevenLabsAPIKeys = parseAPIKeys(val)
+			return
+		}
+	}
+
+	if keys := os.Getenv("ELEVENLABS_API_KEYS"); keys != "" {
+		cfg.ElevenLabsAPIKeys = parseAPIKeys(keys)
+		return
+	}
+
+	if cfg.ElevenLabsAPIKey != "" {
+		cfg.ElevenLabsAPIKeys = []string{cfg.ElevenLabsAPIKey}
+	}
+}
+
+func parseAPIKeys(s string) []string {
+	var keys []string
+	for _, k := range strings.Split(s, ",") {
+		if trimmed := strings.TrimSpace(k); trimmed != "" {
+			keys = append(keys, trimmed)
+		}
+	}
+	return keys
 }
 
 func accessSecret(ctx context.Context, client *secretmanager.Client, project, name string) (string, error) {
