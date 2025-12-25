@@ -3,12 +3,14 @@ package video
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"craftstory/internal/storage"
@@ -16,27 +18,37 @@ import (
 )
 
 const (
-	defaultFFmpegPath = "ffmpeg"
-	defaultFFprobe    = "ffprobe"
-	videoEndBuffer    = 1.5
+	ffmpegBin      = "ffmpeg"
+	ffprobeBin     = "ffprobe"
+	videoEndBuffer = 1.5
+	defaultWidth   = 1080
+	defaultHeight  = 1920
 )
 
 type Assembler struct {
-	ffmpegPath    string
-	ffprobe       string
-	outputDir     string
-	width         int
-	height        int
-	subtitleGen   *SubtitleGenerator
-	bgProvider    storage.BackgroundProvider
-	musicDir      string
-	musicVolume   float64
-	musicFadeIn   float64
-	musicFadeOut  float64
-	introPath     string
-	outroPath     string
-	introDuration float64
-	outroDuration float64
+	ffmpeg      string
+	ffprobe     string
+	outputDir   string
+	width       int
+	height      int
+	subtitleGen *SubtitleGenerator
+	bgProvider  storage.BackgroundProvider
+	music       musicConfig
+	intro       clipConfig
+	outro       clipConfig
+	verbose     bool
+}
+
+type musicConfig struct {
+	dir     string
+	volume  float64
+	fadeIn  float64
+	fadeOut float64
+}
+
+type clipConfig struct {
+	path     string
+	duration float64
 }
 
 type AssemblerOptions struct {
@@ -52,6 +64,7 @@ type AssemblerOptions struct {
 	OutroPath     string
 	IntroDuration float64
 	OutroDuration float64
+	Verbose       bool
 }
 
 type ImageOverlay struct {
@@ -80,314 +93,174 @@ type AssembleResult struct {
 
 func NewAssembler(outputDir string, subtitleGen *SubtitleGenerator, bgProvider storage.BackgroundProvider) *Assembler {
 	return &Assembler{
-		ffmpegPath:  defaultFFmpegPath,
-		ffprobe:     defaultFFprobe,
+		ffmpeg:      ffmpegBin,
+		ffprobe:     ffprobeBin,
 		outputDir:   outputDir,
-		width:       1080,
-		height:      1920,
+		width:       defaultWidth,
+		height:      defaultHeight,
 		subtitleGen: subtitleGen,
 		bgProvider:  bgProvider,
 	}
 }
 
 func NewAssemblerWithOptions(opts AssemblerOptions) *Assembler {
-	width, height := parseResolution(opts.Resolution)
-	musicVolume := opts.MusicVolume
-	if musicVolume == 0 {
-		musicVolume = 0.15
-	}
-	musicFadeIn := opts.MusicFadeIn
-	if musicFadeIn == 0 {
-		musicFadeIn = 1.0
-	}
-	musicFadeOut := opts.MusicFadeOut
-	if musicFadeOut == 0 {
-		musicFadeOut = 2.0
-	}
+	w, h := parseResolution(opts.Resolution)
 	return &Assembler{
-		ffmpegPath:    defaultFFmpegPath,
-		ffprobe:       defaultFFprobe,
-		outputDir:     opts.OutputDir,
-		width:         width,
-		height:        height,
-		subtitleGen:   opts.SubtitleGen,
-		bgProvider:    opts.BgProvider,
-		musicDir:      opts.MusicDir,
-		musicVolume:   musicVolume,
-		musicFadeIn:   musicFadeIn,
-		musicFadeOut:  musicFadeOut,
-		introPath:     opts.IntroPath,
-		outroPath:     opts.OutroPath,
-		introDuration: opts.IntroDuration,
-		outroDuration: opts.OutroDuration,
+		ffmpeg:      ffmpegBin,
+		ffprobe:     ffprobeBin,
+		outputDir:   opts.OutputDir,
+		width:       w,
+		height:      h,
+		subtitleGen: opts.SubtitleGen,
+		bgProvider:  opts.BgProvider,
+		music: musicConfig{
+			dir:     opts.MusicDir,
+			volume:  orDefault(opts.MusicVolume, 0.15),
+			fadeIn:  orDefault(opts.MusicFadeIn, 1.0),
+			fadeOut: orDefault(opts.MusicFadeOut, 2.0),
+		},
+		intro:   clipConfig{path: opts.IntroPath, duration: opts.IntroDuration},
+		outro:   clipConfig{path: opts.OutroPath, duration: opts.OutroDuration},
+		verbose: opts.Verbose,
 	}
 }
 
-func parseResolution(res string) (int, int) {
-	parts := strings.Split(res, "x")
-	if len(parts) != 2 {
-		return 1080, 1920
+func (a *Assembler) log(msg string, args ...any) {
+	if !a.verbose {
+		return
 	}
-	w, err1 := strconv.Atoi(parts[0])
-	h, err2 := strconv.Atoi(parts[1])
-	if err1 != nil || err2 != nil {
-		return 1080, 1920
-	}
-	return w, h
+	slog.Debug(msg, args...)
 }
 
 func (a *Assembler) Assemble(ctx context.Context, req AssembleRequest) (*AssembleResult, error) {
-	backgroundClip, err := a.bgProvider.RandomBackgroundClip(ctx)
+	a.log("selecting background clip")
+	bgClip, err := a.bgProvider.RandomBackgroundClip(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to select background clip: %w", err)
+		return nil, fmt.Errorf("select background: %w", err)
 	}
+	a.log("selected background", "clip", bgClip)
 
-	clipDuration, err := a.getVideoDuration(ctx, backgroundClip)
+	clipDur, err := a.videoDuration(ctx, bgClip)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get clip duration: %w", err)
+		return nil, fmt.Errorf("get clip duration: %w", err)
 	}
+	a.log("clip duration", "seconds", clipDur)
 
-	startTime := a.randomStartTime(clipDuration, req.AudioDuration)
+	startTime := randomStart(clipDur, req.AudioDuration)
+	a.log("random start time", "seconds", startTime)
 
-	var subtitles []Subtitle
-	if len(req.WordTimings) > 0 {
-		subtitles = a.subtitleGen.GenerateFromTimingsWithColors(req.WordTimings, req.SpeakerColors)
-	} else {
-		subtitles = a.subtitleGen.Generate(req.Script, req.AudioDuration)
+	a.log("generating subtitles")
+	subtitles := a.generateSubtitles(req)
+	a.log("generated subtitles", "count", len(subtitles))
+
+	assPath, cleanup, err := a.writeSubtitleFile(req.OutputPath, subtitles)
+	if err != nil {
+		return nil, err
 	}
-	assContent := a.subtitleGen.ToASS(subtitles)
+	defer cleanup()
+	a.log("wrote subtitle file", "path", assPath)
 
-	outputPath := req.OutputPath
-	if outputPath == "" {
-		outputPath = filepath.Join(a.outputDir, fmt.Sprintf("video_%d.mp4", time.Now().Unix()))
-	}
-
-	outputDir := filepath.Dir(outputPath)
-	assPath := filepath.Join(outputDir, fmt.Sprintf("subs_%d.ass", time.Now().UnixNano()))
-	if err := os.WriteFile(assPath, []byte(assContent), 0644); err != nil {
-		return nil, fmt.Errorf("failed to write subtitle file: %w", err)
-	}
-	defer func() { _ = os.Remove(assPath) }()
-
+	outputPath := a.resolveOutputPath(req.OutputPath)
 	musicPath := a.selectMusicTrack()
+	a.log("selected music", "path", musicPath)
+
+	a.log("building filter complex")
 	filterComplex := a.buildFilterComplex(assPath, req.ImageOverlays, musicPath, req.AudioDuration)
+	a.log("filter complex", "filter", filterComplex)
 
-	mainVideoPath := outputPath
-	needsConcat := a.introPath != "" || a.outroPath != ""
-	if needsConcat {
-		mainVideoPath = filepath.Join(outputDir, fmt.Sprintf("main_%d.mp4", time.Now().UnixNano()))
-		defer func() { _ = os.Remove(mainVideoPath) }()
+	mainPath, cleanupMain := a.prepareMainPath(outputPath)
+	defer cleanupMain()
+
+	a.log("building ffmpeg args")
+	args := a.buildFFmpegArgs(bgClip, req.AudioPath, musicPath, startTime, req.AudioDuration, filterComplex, req.ImageOverlays, mainPath)
+	a.log("ffmpeg command", "args", strings.Join(args, " "))
+
+	a.log("running ffmpeg", "output", mainPath)
+	if err := a.runFFmpeg(ctx, args); err != nil {
+		return nil, err
 	}
+	a.log("ffmpeg completed")
 
-	args := a.buildFFmpegArgs(backgroundClip, req.AudioPath, musicPath, startTime, req.AudioDuration, filterComplex, req.ImageOverlays, mainVideoPath)
-
-	cmd := exec.CommandContext(ctx, a.ffmpegPath, args...)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("ffmpeg failed: %w, output: %s", err, string(output))
-	}
-
-	totalDuration := req.AudioDuration
-
-	if needsConcat {
-		introDur, outroDur, err := a.concatIntroOutro(ctx, mainVideoPath, outputPath)
+	totalDur := req.AudioDuration
+	if a.hasIntroOutro() {
+		a.log("concatenating intro/outro")
+		introDur, outroDur, err := a.concatIntroOutro(ctx, mainPath, outputPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to concat intro/outro: %w", err)
+			return nil, fmt.Errorf("concat intro/outro: %w", err)
 		}
-		totalDuration += introDur + outroDur
+		totalDur += introDur + outroDur
+		a.log("concat completed", "introDur", introDur, "outroDur", outroDur)
 	}
 
-	return &AssembleResult{
-		OutputPath: outputPath,
-		Duration:   totalDuration,
-	}, nil
+	a.log("assembly completed", "output", outputPath, "duration", totalDur)
+	return &AssembleResult{OutputPath: outputPath, Duration: totalDur}, nil
+}
+
+func (a *Assembler) generateSubtitles(req AssembleRequest) []Subtitle {
+	if len(req.WordTimings) > 0 {
+		return a.subtitleGen.GenerateFromTimingsWithColors(req.WordTimings, req.SpeakerColors)
+	}
+	return a.subtitleGen.Generate(req.Script, req.AudioDuration)
+}
+
+func (a *Assembler) writeSubtitleFile(outputPath string, subs []Subtitle) (string, func(), error) {
+	dir := filepath.Dir(a.resolveOutputPath(outputPath))
+	path := filepath.Join(dir, fmt.Sprintf("subs_%d.ass", time.Now().UnixNano()))
+	content := a.subtitleGen.ToASS(subs)
+
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return "", func() {}, fmt.Errorf("write subtitle file: %w", err)
+	}
+	return path, func() { _ = os.Remove(path) }, nil
+}
+
+func (a *Assembler) resolveOutputPath(path string) string {
+	if path != "" {
+		return path
+	}
+	return filepath.Join(a.outputDir, fmt.Sprintf("video_%d.mp4", time.Now().Unix()))
+}
+
+func (a *Assembler) hasIntroOutro() bool {
+	return a.intro.path != "" || a.outro.path != ""
+}
+
+func (a *Assembler) prepareMainPath(outputPath string) (string, func()) {
+	if !a.hasIntroOutro() {
+		return outputPath, func() {}
+	}
+	mainPath := filepath.Join(filepath.Dir(outputPath), fmt.Sprintf("main_%d.mp4", time.Now().UnixNano()))
+	return mainPath, func() { _ = os.Remove(mainPath) }
 }
 
 func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, musicPath string, duration float64) string {
-	scaleFilter := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d",
-		a.width, a.height, a.width, a.height)
-
-	audioFilter := a.buildAudioFilter(musicPath, duration)
+	scale := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d", a.width, a.height, a.width, a.height)
+	hwSuffix := getEncoder().filterSuffix
+	audio := a.buildAudioFilter(musicPath, duration)
 
 	if len(overlays) == 0 {
-		return fmt.Sprintf("[0:v]%s,ass=%s[v];%s",
-			scaleFilter, assPath, audioFilter)
+		return fmt.Sprintf("[0:v]%s,ass=%s%s[v];%s", scale, assPath, hwSuffix, audio)
 	}
 
-	var filters []string
-	filters = append(filters, fmt.Sprintf("[0:v]%s,ass=%s[base]", scaleFilter, assPath))
-
-	lastOutput := "base"
-	inputOffset := a.getInputOffset(musicPath)
-
-	for i, overlay := range overlays {
-		inputIdx := inputOffset + i
-		scaledName := fmt.Sprintf("img%d", i)
-		outputName := fmt.Sprintf("v%d", i)
-
-		if overlay.IsGif {
-			filters = append(filters, fmt.Sprintf(
-				"[%d:v]scale=%d:%d,format=rgba[%s]",
-				inputIdx, overlay.Width, overlay.Height, scaledName,
-			))
-		} else {
-			filters = append(filters, fmt.Sprintf(
-				"[%d:v]scale=%d:%d,format=rgba[%s]",
-				inputIdx, overlay.Width, overlay.Height, scaledName,
-			))
-		}
-
-		x := "(W-w)/2"
-		y := "100"
-
-		filters = append(filters, fmt.Sprintf(
-			"[%s][%s]overlay=%s:%s:enable='between(t,%.2f,%.2f)'[%s]",
-			lastOutput, scaledName, x, y, overlay.StartTime, overlay.EndTime, outputName,
-		))
-
-		lastOutput = outputName
+	inputOffset := 2
+	if musicPath != "" {
+		inputOffset = 3
 	}
 
-	filters = append(filters, fmt.Sprintf("[%s]null[v]", lastOutput))
-	filters = append(filters, audioFilter)
+	filters := []string{fmt.Sprintf("[0:v]%s,ass=%s[base]", scale, assPath)}
+	lastOut := "base"
 
+	for i, ov := range overlays {
+		img := fmt.Sprintf("img%d", i)
+		out := fmt.Sprintf("v%d", i)
+		filters = append(filters, fmt.Sprintf("[%d:v]scale=%d:%d,format=rgba[%s]", inputOffset+i, ov.Width, ov.Height, img))
+		filters = append(filters, fmt.Sprintf("[%s][%s]overlay=(W-w)/2:100:enable='between(t,%.2f,%.2f)'[%s]", lastOut, img, ov.StartTime, ov.EndTime, out))
+		lastOut = out
+	}
+
+	filters = append(filters, fmt.Sprintf("[%s]null%s[v]", lastOut, hwSuffix))
+	filters = append(filters, audio)
 	return strings.Join(filters, ";")
-}
-
-func (a *Assembler) getInputOffset(musicPath string) int {
-	if musicPath != "" {
-		return 3
-	}
-	return 2
-}
-
-func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTime, duration float64, filterComplex string, overlays []ImageOverlay, outputPath string) []string {
-	videoDuration := duration + videoEndBuffer
-
-	args := []string{
-		"-y",
-		"-ss", fmt.Sprintf("%.2f", startTime),
-		"-t", fmt.Sprintf("%.2f", videoDuration),
-		"-i", bgClip,
-		"-i", audioPath,
-	}
-
-	if musicPath != "" {
-		args = append(args, "-i", musicPath)
-	}
-
-	for _, overlay := range overlays {
-		if overlay.IsGif {
-			args = append(args, "-ignore_loop", "0", "-i", overlay.ImagePath)
-		} else {
-			args = append(args, "-i", overlay.ImagePath)
-		}
-	}
-
-	args = append(args,
-		"-filter_complex", filterComplex,
-		"-map", "[v]",
-		"-map", "[a]",
-	)
-
-	args = append(args, a.getVideoEncoderArgs()...)
-	args = append(args,
-		"-c:a", "aac",
-		"-b:a", "128k",
-		"-ar", "44100",
-		"-movflags", "+faststart",
-		outputPath,
-	)
-
-	return args
-}
-
-func (a *Assembler) getVideoEncoderArgs() []string {
-	if hasNVENC() {
-		return []string{
-			"-c:v", "h264_nvenc",
-			"-preset", "p1",
-			"-tune", "ll",
-			"-rc", "vbr",
-			"-cq", "28",
-			"-pix_fmt", "yuv420p",
-		}
-	}
-	return []string{
-		"-c:v", "libx264",
-		"-preset", "ultrafast",
-		"-tune", "fastdecode",
-		"-threads", "0",
-		"-crf", "28",
-		"-pix_fmt", "yuv420p",
-	}
-}
-
-func hasNVENC() bool {
-	cmd := exec.Command("ffmpeg", "-hide_banner", "-encoders")
-	output, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(output), "h264_nvenc")
-}
-
-func (a *Assembler) getVideoDuration(ctx context.Context, path string) (float64, error) {
-	args := []string{
-		"-v", "error",
-		"-show_entries", "format=duration",
-		"-of", "default=noprint_wrappers=1:nokey=1",
-		path,
-	}
-
-	cmd := exec.CommandContext(ctx, a.ffprobe, args...)
-	output, err := cmd.Output()
-	if err != nil {
-		return 0, fmt.Errorf("ffprobe failed: %w", err)
-	}
-
-	var dur float64
-	if _, err := fmt.Sscanf(string(output), "%f", &dur); err != nil {
-		return 0, fmt.Errorf("failed to parse duration: %w", err)
-	}
-
-	return dur, nil
-}
-
-func (a *Assembler) randomStartTime(clipDuration, neededDuration float64) float64 {
-	if clipDuration <= neededDuration {
-		return 0
-	}
-
-	maxStart := clipDuration - neededDuration
-	return rand.Float64() * maxStart
-}
-
-func (a *Assembler) selectMusicTrack() string {
-	if a.musicDir == "" {
-		return ""
-	}
-
-	entries, err := os.ReadDir(a.musicDir)
-	if err != nil {
-		return ""
-	}
-
-	var musicFiles []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := strings.ToLower(entry.Name())
-		if strings.HasSuffix(name, ".mp3") || strings.HasSuffix(name, ".wav") || strings.HasSuffix(name, ".m4a") {
-			musicFiles = append(musicFiles, filepath.Join(a.musicDir, entry.Name()))
-		}
-	}
-
-	if len(musicFiles) == 0 {
-		return ""
-	}
-
-	return musicFiles[rand.Intn(len(musicFiles))]
 }
 
 func (a *Assembler) buildAudioFilter(musicPath string, duration float64) string {
@@ -395,120 +268,254 @@ func (a *Assembler) buildAudioFilter(musicPath string, duration float64) string 
 		return "[0:a]volume=0.1[bga];[1:a]volume=1.0[voice];[bga][voice]amix=inputs=2:duration=longest[a]"
 	}
 
-	fadeOutStart := duration - a.musicFadeOut
-	if fadeOutStart < 0 {
-		fadeOutStart = 0
-	}
-
+	fadeOut := max(duration-a.music.fadeOut, 0)
 	return fmt.Sprintf(
-		"[0:a]volume=0.1[bga];"+
-			"[1:a]volume=1.0[voice];"+
-			"[2:a]volume=%.2f,afade=t=in:st=0:d=%.2f,afade=t=out:st=%.2f:d=%.2f[music];"+
-			"[bga][voice][music]amix=inputs=3:duration=longest:normalize=0[a]",
-		a.musicVolume, a.musicFadeIn, fadeOutStart, a.musicFadeOut,
+		"[0:a]volume=0.1[bga];[1:a]volume=1.0[voice];[2:a]volume=%.2f,afade=t=in:st=0:d=%.2f,afade=t=out:st=%.2f:d=%.2f[music];[bga][voice][music]amix=inputs=3:duration=longest:normalize=0[a]",
+		a.music.volume, a.music.fadeIn, fadeOut, a.music.fadeOut,
 	)
 }
 
-func (a *Assembler) concatIntroOutro(ctx context.Context, mainVideoPath, outputPath string) (float64, float64, error) {
-	outputDir := filepath.Dir(outputPath)
-	var clips []string
-	var introDur, outroDur float64
+func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTime, duration float64, filterComplex string, overlays []ImageOverlay, outputPath string) []string {
+	enc := getEncoder()
+	videoDur := duration + videoEndBuffer
 
-	if a.introPath != "" {
-		if _, err := os.Stat(a.introPath); err == nil {
-			introClip, dur, err := a.prepareClip(ctx, a.introPath, a.introDuration, outputDir, "intro")
-			if err != nil {
-				return 0, 0, fmt.Errorf("failed to prepare intro: %w", err)
-			}
-			clips = append(clips, introClip)
-			introDur = dur
-			if introClip != a.introPath {
-				defer func() { _ = os.Remove(introClip) }()
-			}
+	args := []string{"-y", "-threads", "0"}
+	args = append(args, enc.inputArgs...)
+	args = append(args, "-ss", fmt.Sprintf("%.2f", startTime), "-t", fmt.Sprintf("%.2f", videoDur), "-i", bgClip, "-i", audioPath)
+
+	if musicPath != "" {
+		args = append(args, "-i", musicPath)
+	}
+
+	for _, ov := range overlays {
+		if ov.IsGif {
+			args = append(args, "-ignore_loop", "0")
+		}
+		args = append(args, "-i", ov.ImagePath)
+	}
+
+	args = append(args, "-filter_complex", filterComplex, "-map", "[v]", "-map", "[a]")
+	args = append(args, enc.args...)
+	args = append(args, "-c:a", "aac", "-b:a", "96k", "-ar", "44100", "-movflags", "+faststart", outputPath)
+	return args
+}
+
+func (a *Assembler) runFFmpeg(ctx context.Context, args []string) error {
+	cmd := exec.CommandContext(ctx, a.ffmpeg, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ffmpeg: %w, output: %s", err, out)
+	}
+	return nil
+}
+
+func (a *Assembler) selectMusicTrack() string {
+	if a.music.dir == "" {
+		return ""
+	}
+
+	entries, err := os.ReadDir(a.music.dir)
+	if err != nil {
+		return ""
+	}
+
+	var tracks []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := strings.ToLower(e.Name())
+		if strings.HasSuffix(name, ".mp3") || strings.HasSuffix(name, ".wav") || strings.HasSuffix(name, ".m4a") {
+			tracks = append(tracks, filepath.Join(a.music.dir, e.Name()))
 		}
 	}
 
-	clips = append(clips, mainVideoPath)
+	if len(tracks) == 0 {
+		return ""
+	}
+	return tracks[rand.Intn(len(tracks))]
+}
 
-	if a.outroPath != "" {
-		if _, err := os.Stat(a.outroPath); err == nil {
-			outroClip, dur, err := a.prepareClip(ctx, a.outroPath, a.outroDuration, outputDir, "outro")
-			if err != nil {
-				return 0, 0, fmt.Errorf("failed to prepare outro: %w", err)
-			}
-			clips = append(clips, outroClip)
-			outroDur = dur
-			if outroClip != a.outroPath {
-				defer func() { _ = os.Remove(outroClip) }()
-			}
-		}
+func (a *Assembler) videoDuration(ctx context.Context, path string) (float64, error) {
+	cmd := exec.CommandContext(ctx, a.ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path)
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("ffprobe: %w", err)
+	}
+
+	var dur float64
+	if _, err := fmt.Sscanf(string(out), "%f", &dur); err != nil {
+		return 0, fmt.Errorf("parse duration: %w", err)
+	}
+	return dur, nil
+}
+
+func (a *Assembler) concatIntroOutro(ctx context.Context, mainPath, outputPath string) (float64, float64, error) {
+	dir := filepath.Dir(outputPath)
+	var clips []string
+	var introDur, outroDur float64
+
+	if clip, dur, err := a.prepareClip(ctx, a.intro, dir, "intro"); err == nil && clip != "" {
+		clips = append(clips, clip)
+		introDur = dur
+		defer func() { _ = os.Remove(clip) }()
+	}
+
+	clips = append(clips, mainPath)
+
+	if clip, dur, err := a.prepareClip(ctx, a.outro, dir, "outro"); err == nil && clip != "" {
+		clips = append(clips, clip)
+		outroDur = dur
+		defer func() { _ = os.Remove(clip) }()
 	}
 
 	if len(clips) == 1 {
 		return 0, 0, nil
 	}
 
-	listPath := filepath.Join(outputDir, fmt.Sprintf("concat_%d.txt", time.Now().UnixNano()))
-	var listContent string
-	for _, clip := range clips {
-		absPath, err := filepath.Abs(clip)
-		if err != nil {
-			return 0, 0, fmt.Errorf("failed to get absolute path: %w", err)
-		}
-		listContent += fmt.Sprintf("file '%s'\n", absPath)
-	}
-	if err := os.WriteFile(listPath, []byte(listContent), 0644); err != nil {
-		return 0, 0, fmt.Errorf("failed to write concat list: %w", err)
-	}
+	listPath := filepath.Join(dir, fmt.Sprintf("concat_%d.txt", time.Now().UnixNano()))
 	defer func() { _ = os.Remove(listPath) }()
 
-	args := []string{
-		"-y",
-		"-f", "concat",
-		"-safe", "0",
-		"-i", listPath,
-		"-c", "copy",
-		outputPath,
+	var content strings.Builder
+	for _, c := range clips {
+		abs, err := filepath.Abs(c)
+		if err != nil {
+			return 0, 0, fmt.Errorf("abs path: %w", err)
+		}
+		content.WriteString(fmt.Sprintf("file '%s'\n", abs))
 	}
 
-	cmd := exec.CommandContext(ctx, a.ffmpegPath, args...)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return 0, 0, fmt.Errorf("ffmpeg concat failed: %w, output: %s", err, string(output))
+	if err := os.WriteFile(listPath, []byte(content.String()), 0644); err != nil {
+		return 0, 0, fmt.Errorf("write concat list: %w", err)
 	}
 
+	if err := a.runFFmpeg(ctx, []string{"-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", outputPath}); err != nil {
+		return 0, 0, err
+	}
 	return introDur, outroDur, nil
 }
 
-func (a *Assembler) prepareClip(ctx context.Context, clipPath string, maxDuration float64, outputDir, prefix string) (string, float64, error) {
-	dur, err := a.getVideoDuration(ctx, clipPath)
+func (a *Assembler) prepareClip(ctx context.Context, cfg clipConfig, dir, prefix string) (string, float64, error) {
+	if cfg.path == "" {
+		return "", 0, nil
+	}
+	if _, err := os.Stat(cfg.path); err != nil {
+		return "", 0, nil
+	}
+
+	dur, err := a.videoDuration(ctx, cfg.path)
 	if err != nil {
 		return "", 0, err
 	}
 
-	targetDuration := dur
-	if maxDuration > 0 && dur > maxDuration {
-		targetDuration = maxDuration
+	targetDur := dur
+	if cfg.duration > 0 && dur > cfg.duration {
+		targetDur = cfg.duration
 	}
 
-	outputClip := filepath.Join(outputDir, fmt.Sprintf("%s_%d.mp4", prefix, time.Now().UnixNano()))
+	out := filepath.Join(dir, fmt.Sprintf("%s_%d.mp4", prefix, time.Now().UnixNano()))
+	vf := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d", a.width, a.height, a.width, a.height)
+	args := []string{"-y", "-i", cfg.path, "-t", fmt.Sprintf("%.2f", targetDur), "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast", "-threads", "0", "-c:a", "aac", "-ar", "44100", out}
 
-	args := []string{
-		"-y",
-		"-i", clipPath,
-		"-t", fmt.Sprintf("%.2f", targetDuration),
-		"-vf", fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d", a.width, a.height, a.width, a.height),
-		"-c:v", "libx264",
-		"-preset", "ultrafast",
-		"-threads", "0",
-		"-c:a", "aac",
-		"-ar", "44100",
-		outputClip,
+	if err := a.runFFmpeg(ctx, args); err != nil {
+		return "", 0, err
+	}
+	return out, targetDur, nil
+}
+
+// Encoder detection
+
+type encoder struct {
+	name         string
+	args         []string
+	inputArgs    []string
+	filterSuffix string
+	test         func() bool
+}
+
+var (
+	encoderOnce   sync.Once
+	encoderCached encoder
+)
+
+var encoders = []encoder{
+	{
+		name:      "nvenc",
+		args:      []string{"-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-rc", "vbr", "-cq", "30", "-pix_fmt", "yuv420p"},
+		inputArgs: nil,
+		test:      func() bool { return testEnc("h264_nvenc") },
+	},
+	{
+		name:         "vaapi",
+		args:         []string{"-c:v", "h264_vaapi", "-qp", "28"},
+		inputArgs:    []string{"-vaapi_device", "/dev/dri/renderD128"},
+		filterSuffix: ",format=nv12,hwupload",
+		test:         testVAAPI,
+	},
+	{
+		name: "v4l2m2m",
+		args: []string{"-c:v", "h264_v4l2m2m", "-b:v", "2M", "-pix_fmt", "yuv420p"},
+		test: func() bool { return testEnc("h264_v4l2m2m") },
+	},
+	{
+		name: "omx",
+		args: []string{"-c:v", "h264_omx", "-b:v", "2M", "-pix_fmt", "yuv420p"},
+		test: func() bool { return testEnc("h264_omx") },
+	},
+}
+
+var softwareEncoder = encoder{
+	name: "libx264",
+	args: []string{"-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-threads", "0", "-crf", "28", "-pix_fmt", "yuv420p"},
+}
+
+func getEncoder() encoder {
+	encoderOnce.Do(func() {
+		for _, e := range encoders {
+			if e.test() {
+				encoderCached = e
+				return
+			}
+		}
+		encoderCached = softwareEncoder
+	})
+	return encoderCached
+}
+
+func testEnc(codec string) bool {
+	return exec.Command(ffmpegBin, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "nullsrc=s=256x256:d=1", "-c:v", codec, "-frames:v", "1", "-f", "null", "-").Run() == nil
+}
+
+func testVAAPI() bool {
+	return exec.Command(ffmpegBin, "-hide_banner", "-loglevel", "error", "-vaapi_device", "/dev/dri/renderD128", "-f", "lavfi", "-i", "nullsrc=s=256x256:d=1", "-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi", "-frames:v", "1", "-f", "null", "-").Run() == nil
+}
+
+// Helpers
+
+func parseResolution(res string) (int, int) {
+	parts := strings.Split(res, "x")
+	if len(parts) != 2 {
+		return defaultWidth, defaultHeight
 	}
 
-	cmd := exec.CommandContext(ctx, a.ffmpegPath, args...)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return "", 0, fmt.Errorf("ffmpeg re-encode failed: %w, output: %s", err, string(output))
+	w, err1 := strconv.Atoi(parts[0])
+	h, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return defaultWidth, defaultHeight
 	}
+	return w, h
+}
 
-	return outputClip, targetDuration, nil
+func randomStart(clipDur, needed float64) float64 {
+	if clipDur <= needed {
+		return 0
+	}
+	return rand.Float64() * (clipDur - needed)
+}
+
+func orDefault(val, def float64) float64 {
+	if val == 0 {
+		return def
+	}
+	return val
 }

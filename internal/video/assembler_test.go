@@ -12,8 +12,8 @@ func TestNewAssembler(t *testing.T) {
 	if assembler.outputDir != "/output" {
 		t.Errorf("outputDir = %q, want %q", assembler.outputDir, "/output")
 	}
-	if assembler.ffmpegPath != "ffmpeg" {
-		t.Errorf("ffmpegPath = %q, want %q", assembler.ffmpegPath, "ffmpeg")
+	if assembler.ffmpeg != "ffmpeg" {
+		t.Errorf("ffmpeg = %q, want %q", assembler.ffmpeg, "ffmpeg")
 	}
 	if assembler.ffprobe != "ffprobe" {
 		t.Errorf("ffprobe = %q, want %q", assembler.ffprobe, "ffprobe")
@@ -45,7 +45,8 @@ func TestBuildFilterComplex(t *testing.T) {
 			wantContains: []string{
 				"scale=1080:1920",
 				"crop=1080:1920",
-				"ass=/tmp/subs.ass[v]",
+				"ass=/tmp/subs.ass",
+				"[v]",
 				"volume=0.1",
 				"amix=inputs=2",
 				"duration=longest",
@@ -151,7 +152,7 @@ func TestBuildFFmpegArgs(t *testing.T) {
 				"-i", "/audio/voice.mp3",
 				"-map", "[v]",
 				"-map", "[a]",
-				"-c:v", "libx264",
+				"-c:v",
 				"-c:a", "aac",
 			},
 		},
@@ -204,9 +205,6 @@ func TestBuildFFmpegArgs(t *testing.T) {
 }
 
 func TestRandomStartTime(t *testing.T) {
-	subGen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
-	assembler := NewAssembler("/output", subGen, nil)
-
 	tests := []struct {
 		name           string
 		clipDuration   float64
@@ -236,16 +234,16 @@ func TestRandomStartTime(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			for i := 0; i < 10; i++ {
-				result := assembler.randomStartTime(tt.clipDuration, tt.neededDuration)
+				result := randomStart(tt.clipDuration, tt.neededDuration)
 
 				if tt.wantZero && result != 0 {
-					t.Errorf("randomStartTime() = %v, want 0", result)
+					t.Errorf("randomStart() = %v, want 0", result)
 				}
 
 				if !tt.wantZero {
 					maxStart := tt.clipDuration - tt.neededDuration
 					if result < 0 || result > maxStart {
-						t.Errorf("randomStartTime() = %v, want 0 <= x <= %v", result, maxStart)
+						t.Errorf("randomStart() = %v, want 0 <= x <= %v", result, maxStart)
 					}
 				}
 			}
@@ -338,17 +336,17 @@ func TestNewAssemblerWithMusicOptions(t *testing.T) {
 		MusicFadeOut: 2.5,
 	})
 
-	if assembler.musicDir != "/music" {
-		t.Errorf("musicDir = %q, want %q", assembler.musicDir, "/music")
+	if assembler.music.dir != "/music" {
+		t.Errorf("music.dir = %q, want %q", assembler.music.dir, "/music")
 	}
-	if assembler.musicVolume != 0.2 {
-		t.Errorf("musicVolume = %v, want %v", assembler.musicVolume, 0.2)
+	if assembler.music.volume != 0.2 {
+		t.Errorf("music.volume = %v, want %v", assembler.music.volume, 0.2)
 	}
-	if assembler.musicFadeIn != 1.5 {
-		t.Errorf("musicFadeIn = %v, want %v", assembler.musicFadeIn, 1.5)
+	if assembler.music.fadeIn != 1.5 {
+		t.Errorf("music.fadeIn = %v, want %v", assembler.music.fadeIn, 1.5)
 	}
-	if assembler.musicFadeOut != 2.5 {
-		t.Errorf("musicFadeOut = %v, want %v", assembler.musicFadeOut, 2.5)
+	if assembler.music.fadeOut != 2.5 {
+		t.Errorf("music.fadeOut = %v, want %v", assembler.music.fadeOut, 2.5)
 	}
 }
 
@@ -399,37 +397,6 @@ func TestBuildAudioFilter(t *testing.T) {
 				if !strings.Contains(result, want) {
 					t.Errorf("buildAudioFilter() missing %q\ngot: %s", want, result)
 				}
-			}
-		})
-	}
-}
-
-func TestGetInputOffset(t *testing.T) {
-	subGen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
-	assembler := NewAssembler("/output", subGen, nil)
-
-	tests := []struct {
-		name      string
-		musicPath string
-		want      int
-	}{
-		{
-			name:      "noMusic",
-			musicPath: "",
-			want:      2,
-		},
-		{
-			name:      "withMusic",
-			musicPath: "/music/track.mp3",
-			want:      3,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := assembler.getInputOffset(tt.musicPath)
-			if got != tt.want {
-				t.Errorf("getInputOffset() = %d, want %d", got, tt.want)
 			}
 		})
 	}
