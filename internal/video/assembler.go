@@ -298,9 +298,6 @@ func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTi
 	}
 
 	for _, ov := range overlays {
-		if ov.IsGif {
-			args = append(args, "-ignore_loop", "0")
-		}
 		args = append(args, "-i", ov.ImagePath)
 	}
 
