@@ -40,6 +40,17 @@ type ElevenLabsConfig struct {
 
 type elevenLabsOption func(*elevenLabsClient)
 
+type timestampResponse struct {
+	AudioBase64 string     `json:"audio_base64"`
+	Alignment   *alignment `json:"alignment"`
+}
+
+type alignment struct {
+	Characters          []string  `json:"characters"`
+	CharacterStartTimes []float64 `json:"character_start_times_seconds"`
+	CharacterEndTimes   []float64 `json:"character_end_times_seconds"`
+}
+
 func withBaseURL(url string) elevenLabsOption {
 	return func(c *elevenLabsClient) {
 		c.baseURL = url
@@ -50,17 +61,6 @@ func withHTTPClient(client *http.Client) elevenLabsOption {
 	return func(c *elevenLabsClient) {
 		c.httpClient = client
 	}
-}
-
-type timestampResponse struct {
-	AudioBase64 string     `json:"audio_base64"`
-	Alignment   *alignment `json:"alignment"`
-}
-
-type alignment struct {
-	Characters          []string  `json:"characters"`
-	CharacterStartTimes []float64 `json:"character_start_times_seconds"`
-	CharacterEndTimes   []float64 `json:"character_end_times_seconds"`
 }
 
 func NewElevenLabsClient(cfg ElevenLabsConfig) Provider {

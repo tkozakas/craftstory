@@ -35,7 +35,7 @@ func TestRetryClientRetriesOn503(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -69,7 +69,7 @@ func TestRetryClientRetriesOn429(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -99,7 +99,7 @@ func TestRetryClientDoesNotRetryOn400(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected status 400, got %d", resp.StatusCode)
@@ -129,7 +129,7 @@ func TestRetryClientDoesNotRetryOn401(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("expected status 401, got %d", resp.StatusCode)
@@ -160,9 +160,8 @@ func TestRetryClientRespectsMaxRetries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
-	// Should be 1 initial + maxRetries attempts
 	expectedAttempts := int32(1 + maxRetries)
 	if atomic.LoadInt32(&attempts) != expectedAttempts {
 		t.Errorf("expected %d attempts, got %d", expectedAttempts, attempts)
@@ -197,15 +196,12 @@ func TestRetryClientUsesExponentialBackoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if len(timestamps) < 4 {
 		t.Fatalf("expected at least 4 timestamps, got %d", len(timestamps))
 	}
 
-	// Check that delays increase (with tolerance for jitter)
-	// First retry: ~50ms, Second retry: ~100ms, Third retry: ~200ms
-	// Allow 30% tolerance for jitter and timing variations
 	delays := []time.Duration{
 		timestamps[1].Sub(timestamps[0]),
 		timestamps[2].Sub(timestamps[1]),
@@ -219,7 +215,6 @@ func TestRetryClientUsesExponentialBackoff(t *testing.T) {
 	}
 
 	for i, expected := range expectedDelays {
-		// Allow 50% tolerance due to jitter (±10%) and system timing variations
 		minDelay := time.Duration(float64(expected) * 0.5)
 		maxDelay := time.Duration(float64(expected) * 1.5)
 		if delays[i] < minDelay || delays[i] > maxDelay {
@@ -262,13 +257,12 @@ func TestRetryClientWithRequestBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
 	}
 
-	// Verify body was sent on each attempt
 	for i, body := range receivedBodies {
 		if body != bodyContent {
 			t.Errorf("attempt %d: expected body %q, got %q", i+1, bodyContent, body)
@@ -337,7 +331,7 @@ func TestRetryClientRetriesOn500(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -371,7 +365,7 @@ func TestRetryClientRetriesOn502(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -401,7 +395,7 @@ func TestRetryClientDoesNotRetryOn404(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected status 404, got %d", resp.StatusCode)

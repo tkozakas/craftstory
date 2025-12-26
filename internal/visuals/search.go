@@ -80,15 +80,7 @@ func NewSearchClient(apiKey, engineID string) *SearchClient {
 }
 
 func (c *SearchClient) Search(ctx context.Context, query string, count int) ([]SearchResult, error) {
-	return c.search(ctx, query, count, "photo")
-}
-
-func (c *SearchClient) SearchGif(ctx context.Context, query string, count int) ([]SearchResult, error) {
-	return c.search(ctx, query, count, "animated")
-}
-
-func (c *SearchClient) search(ctx context.Context, query string, count int, imgType string) ([]SearchResult, error) {
-	reqURL := c.buildSearchURL(query, count, imgType)
+	reqURL := c.buildSearchURL(query, count)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
@@ -109,7 +101,7 @@ func (c *SearchClient) search(ctx context.Context, query string, count int, imgT
 	return c.parseSearchResponse(resp.Body, count)
 }
 
-func (c *SearchClient) buildSearchURL(query string, count int, imgType string) string {
+func (c *SearchClient) buildSearchURL(query string, count int) string {
 	requestCount := count * 3
 	if requestCount > 10 {
 		requestCount = 10
@@ -123,7 +115,7 @@ func (c *SearchClient) buildSearchURL(query string, count int, imgType string) s
 	params.Set("num", fmt.Sprintf("%d", requestCount))
 	params.Set("safe", "active")
 	params.Set("imgSize", "xlarge")
-	params.Set("imgType", imgType)
+	params.Set("imgType", "photo")
 
 	return fmt.Sprintf("%s?%s", c.baseURL, params.Encode())
 }

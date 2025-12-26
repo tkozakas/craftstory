@@ -1,8 +1,7 @@
-package main
+package cmd
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,24 +11,28 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/huh/spinner"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/spf13/cobra"
 )
 
 var (
 	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).MarginBottom(1)
 	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 	infoStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
 )
 
-func main() {
-	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, errorStyle.Render(fmt.Sprintf("Setup failed: %v", err)))
-		os.Exit(1)
-	}
+var setupCmd = &cobra.Command{
+	Use:   "setup",
+	Short: "Interactive setup wizard for Craftstory",
+	Long:  `Configure API keys, create directories, and set up the environment for Craftstory.`,
+	RunE:  runSetup,
 }
 
-func run() error {
+func init() {
+	rootCmd.AddCommand(setupCmd)
+}
+
+func runSetup(cmd *cobra.Command, args []string) error {
 	fmt.Println(titleStyle.Render("🎬 Craftstory Setup"))
 
 	steps := []struct {
@@ -75,7 +78,7 @@ func installTools() error {
 	}
 
 	return runWithSpinner("Installing tools via mise", func() error {
-		return runCmd("mise", "install")
+		return runSetupCmd("mise", "install")
 	})
 }
 
@@ -83,9 +86,9 @@ func installMise() error {
 	return runWithSpinner("Installing mise", func() error {
 		switch runtime.GOOS {
 		case "darwin":
-			return runCmd("brew", "install", "mise")
+			return runSetupCmd("brew", "install", "mise")
 		case "linux":
-			return runCmd("sh", "-c", "curl -fsSL https://mise.run | sh")
+			return runSetupCmd("sh", "-c", "curl -fsSL https://mise.run | sh")
 		default:
 			return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 		}
@@ -245,13 +248,13 @@ func createGCPProject() (string, error) {
 	}
 
 	err := runWithSpinner("Creating project", func() error {
-		return runCmd("gcloud", "projects", "create", projectID)
+		return runSetupCmd("gcloud", "projects", "create", projectID)
 	})
 	if err != nil {
 		return "", err
 	}
 
-	_ = runCmd("gcloud", "config", "set", "project", projectID)
+	_ = runSetupCmd("gcloud", "config", "set", "project", projectID)
 
 	return projectID, nil
 }
@@ -266,7 +269,7 @@ func enableGCPAPIs(project string) error {
 	return runWithSpinner("Enabling APIs", func() error {
 		args := append([]string{"services", "enable"}, apis...)
 		args = append(args, "--project", project)
-		return runCmd("gcloud", args...)
+		return runSetupCmd("gcloud", args...)
 	})
 }
 
@@ -387,16 +390,63 @@ func configureRequiredKeys(env map[string]string) error {
 }
 
 func configureOptionalKeys(env map[string]string) error {
-	var setupTelegram bool
+	if err := configureTenor(env); err != nil {
+		return err
+	}
+
+	if err := configureTelegram(env); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func configureTenor(env map[string]string) error {
+	var setup bool
 	if err := huh.NewConfirm().
-		Title("Setup Telegram bot?").
-		Description("For video approval workflow (optional)").
-		Value(&setupTelegram).
+		Title("Setup Tenor GIFs?").
+		Description("For animated GIF overlays in videos (optional)").
+		Value(&setup).
 		Run(); err != nil {
 		return err
 	}
 
-	if !setupTelegram {
+	if !setup {
+		return nil
+	}
+
+	fmt.Println(infoStyle.Render(`
+To get a Tenor API key:
+1. Go to https://developers.google.com/tenor/guides/quickstart
+2. Create a project and enable Tenor API
+3. Copy the API key
+`))
+
+	var apiKey string
+	if err := huh.NewInput().
+		Title("Tenor API Key").
+		Value(&apiKey).
+		Run(); err != nil {
+		return err
+	}
+
+	if apiKey != "" {
+		env["TENOR_API_KEY"] = apiKey
+	}
+	return nil
+}
+
+func configureTelegram(env map[string]string) error {
+	var setup bool
+	if err := huh.NewConfirm().
+		Title("Setup Telegram bot?").
+		Description("For video approval workflow (optional)").
+		Value(&setup).
+		Run(); err != nil {
+		return err
+	}
+
+	if !setup {
 		return nil
 	}
 
@@ -430,12 +480,13 @@ func writeEnvFile(env map[string]string) error {
 		"YOUTUBE_CLIENT_SECRET",
 		"GOOGLE_SEARCH_API_KEY",
 		"GOOGLE_SEARCH_ENGINE_ID",
+		"TENOR_API_KEY",
 		"TELEGRAM_BOT_TOKEN",
 	}
 
 	for _, key := range order {
 		if val, ok := env[key]; ok && val != "" {
-			fmt.Fprintf(f, "%s=%s\n", key, val)
+			_, _ = fmt.Fprintf(f, "%s=%s\n", key, val)
 		}
 	}
 
@@ -449,7 +500,7 @@ func printNextSteps() {
 	fmt.Println(titleStyle.Render("Next steps:"))
 	fmt.Println("  1. Add background videos to: assets/backgrounds/")
 	fmt.Println("  2. Add music (optional) to: assets/music/")
-	fmt.Println("  3. Run: task run -- once -topic \"your topic\"")
+	fmt.Println("  3. Run: craftstory once -t \"your topic\"")
 }
 
 func required(field string) func(string) error {
@@ -466,7 +517,7 @@ func commandExists(name string) bool {
 	return err == nil
 }
 
-func runCmd(name string, args ...string) error {
+func runSetupCmd(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -487,26 +538,4 @@ func runWithSpinner(title string, fn func() error) error {
 	}
 	fmt.Println(successStyle.Render("✓ " + title))
 	return nil
-}
-
-type gcloudProject struct {
-	ProjectID string `json:"projectId"`
-}
-
-func listGCPProjects() ([]string, error) {
-	out, err := exec.Command("gcloud", "projects", "list", "--format=json").Output()
-	if err != nil {
-		return nil, err
-	}
-
-	var projects []gcloudProject
-	if err := json.Unmarshal(out, &projects); err != nil {
-		return nil, err
-	}
-
-	ids := make([]string, len(projects))
-	for i, p := range projects {
-		ids[i] = p.ProjectID
-	}
-	return ids, nil
 }

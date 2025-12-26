@@ -18,12 +18,12 @@ type Config struct {
 	YouTubeClientID      string
 	YouTubeClientSecret  string
 	YouTubeTokenPath     string
-	GCSBucket            string
 	GoogleSearchAPIKey   string
 	GoogleSearchEngineID string
 	TelegramBotToken     string
 	ElevenLabsAPIKey     string
 	ElevenLabsAPIKeys    []string
+	TenorAPIKey          string
 
 	Groq       GroqConfig       `yaml:"groq"`
 	ElevenLabs ElevenLabsConfig `yaml:"elevenlabs"`
@@ -32,7 +32,6 @@ type Config struct {
 	Music      MusicConfig      `yaml:"music"`
 	Subtitles  SubtitlesConfig  `yaml:"subtitles"`
 	YouTube    YouTubeConfig    `yaml:"youtube"`
-	GCS        GCSConfig        `yaml:"gcs"`
 	Visuals    VisualsConfig    `yaml:"visuals"`
 	Reddit     RedditConfig     `yaml:"reddit"`
 	Telegram   TelegramConfig   `yaml:"telegram"`
@@ -97,11 +96,6 @@ type YouTubeConfig struct {
 	PrivacyStatus string   `yaml:"privacy_status"`
 }
 
-type GCSConfig struct {
-	Enabled       bool   `yaml:"enabled"`
-	BackgroundDir string `yaml:"background_dir"`
-}
-
 type VisualsConfig struct {
 	Position       string  `yaml:"position"`
 	MaxDisplayTime float64 `yaml:"max_display_time"`
@@ -136,7 +130,6 @@ func Load(ctx context.Context) (*Config, error) {
 
 	cfg.GCPProject = os.Getenv("GOOGLE_CLOUD_PROJECT")
 	cfg.YouTubeTokenPath = envOr("YOUTUBE_TOKEN_PATH", "./youtube_token.json")
-	cfg.GCSBucket = os.Getenv("GCS_BUCKET")
 
 	cfg.loadSecrets(ctx)
 
@@ -156,6 +149,7 @@ func (cfg *Config) loadSecrets(ctx context.Context) {
 		{"google-search-engine-id", "GOOGLE_SEARCH_ENGINE_ID", &cfg.GoogleSearchEngineID},
 		{"telegram-bot-token", "TELEGRAM_BOT_TOKEN", &cfg.TelegramBotToken},
 		{"elevenlabs-api-key", "ELEVENLABS_API_KEY", &cfg.ElevenLabsAPIKey},
+		{"tenor-api-key", "TENOR_API_KEY", &cfg.TenorAPIKey},
 	}
 
 	var client *secretmanager.Client

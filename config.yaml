@@ -56,10 +56,6 @@ youtube:
     - "facts"
   privacy_status: "private"
 
-gcs:
-  enabled: false
-  background_dir: "backgrounds"
-
 reddit:
   subreddits:
     - "cscareerquestions"

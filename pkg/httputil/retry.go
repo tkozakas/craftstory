@@ -77,7 +77,7 @@ func (c *RetryClient) Do(req *http.Request) (*http.Response, error) {
 		}
 
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 	}
 

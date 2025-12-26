@@ -52,7 +52,6 @@ func testPrompts() *prompts.Prompts {
 	}
 }
 
-// makeGroqResponse creates a valid Groq API response with the given content
 func makeGroqResponse(content string) groqResponse {
 	return groqResponse{
 		ID:      "test-id",
@@ -91,14 +90,12 @@ func makeGroqResponse(content string) groqResponse {
 	}
 }
 
-// makeEmptyChoicesResponse creates a response with no choices
 func makeEmptyChoicesResponse() groqResponse {
 	resp := makeGroqResponse("")
 	resp.Choices = nil
 	return resp
 }
 
-// newTestClient creates a GroqClient pointing to the test server
 func newTestClient(t *testing.T, serverURL string) *GroqClient {
 	t.Helper()
 	client, err := groq.NewClient("test-api-key", groq.WithBaseURL(serverURL+"/"))
@@ -151,20 +148,18 @@ func TestGenerateScript(t *testing.T) {
 			wantErrContain: "no response",
 		},
 		{
-			name:      "httpErrorUnauthorized",
-			topic:     "test topic",
-			wordCount: 50,
-			// Use 401 Unauthorized - groq-go doesn't retry on this status
+			name:           "httpErrorUnauthorized",
+			topic:          "test topic",
+			wordCount:      50,
 			responseBody:   `{"error": {"message": "invalid api key", "type": "authentication_error"}}`,
 			statusCode:     http.StatusUnauthorized,
 			wantErr:        true,
 			wantErrContain: "generate",
 		},
 		{
-			name:      "httpErrorBadRequest",
-			topic:     "test topic",
-			wordCount: 50,
-			// Use 400 Bad Request - groq-go doesn't retry on this status
+			name:           "httpErrorBadRequest",
+			topic:          "test topic",
+			wordCount:      50,
 			responseBody:   `{"error": {"message": "bad request", "type": "invalid_request_error"}}`,
 			statusCode:     http.StatusBadRequest,
 			wantErr:        true,
@@ -554,7 +549,6 @@ func TestRequestValidation(t *testing.T) {
 func TestContextCancellation(t *testing.T) {
 	t.Run("respectsContextCancellation", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Simulate slow response - but we'll cancel before it completes
 			<-r.Context().Done()
 		}))
 		defer server.Close()
@@ -575,7 +569,6 @@ func TestRateLimitError(t *testing.T) {
 	t.Run("handlesRateLimitError", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			// 429 Too Many Requests - groq-go doesn't retry on this status
 			w.WriteHeader(http.StatusTooManyRequests)
 			_, _ = w.Write([]byte(`{"error": {"message": "rate limit exceeded", "type": "rate_limit_error"}}`))
 		}))
@@ -595,7 +588,6 @@ func TestRateLimitError(t *testing.T) {
 	})
 }
 
-// mustJSON marshals v to JSON and panics on error (for test setup only)
 func mustJSON(v any) string {
 	b, err := json.Marshal(v)
 	if err != nil {

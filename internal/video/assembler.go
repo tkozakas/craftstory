@@ -23,7 +23,7 @@ const (
 	videoEndBuffer = 1.5
 	defaultWidth   = 1080
 	defaultHeight  = 1920
-	maxOverlays    = 6 // limit overlays to avoid slow encoding
+	maxOverlays    = 6
 )
 
 type Assembler struct {
@@ -90,6 +90,50 @@ type AssembleRequest struct {
 type AssembleResult struct {
 	OutputPath string
 	Duration   float64
+}
+
+type encoder struct {
+	name         string
+	args         []string
+	inputArgs    []string
+	filterSuffix string
+	test         func() bool
+}
+
+var (
+	encoderOnce   sync.Once
+	encoderCached encoder
+)
+
+var encoders = []encoder{
+	{
+		name:      "nvenc",
+		args:      []string{"-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-rc", "vbr", "-cq", "30", "-pix_fmt", "yuv420p"},
+		inputArgs: nil,
+		test:      func() bool { return testEnc("h264_nvenc") },
+	},
+	{
+		name:         "vaapi",
+		args:         []string{"-c:v", "h264_vaapi", "-qp", "28"},
+		inputArgs:    []string{"-vaapi_device", "/dev/dri/renderD128"},
+		filterSuffix: ",format=nv12,hwupload",
+		test:         testVAAPI,
+	},
+	{
+		name: "v4l2m2m",
+		args: []string{"-c:v", "h264_v4l2m2m", "-b:v", "2M", "-pix_fmt", "yuv420p"},
+		test: func() bool { return testEnc("h264_v4l2m2m") },
+	},
+	{
+		name: "omx",
+		args: []string{"-c:v", "h264_omx", "-b:v", "2M", "-pix_fmt", "yuv420p"},
+		test: func() bool { return testEnc("h264_omx") },
+	},
+}
+
+var softwareEncoder = encoder{
+	name: "libx264",
+	args: []string{"-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-threads", "0", "-crf", "28", "-pix_fmt", "yuv420p"},
 }
 
 func NewAssembler(outputDir string, subtitleGen *SubtitleGenerator, bgProvider storage.BackgroundProvider) *Assembler {
@@ -435,52 +479,6 @@ func (a *Assembler) prepareClip(ctx context.Context, cfg clipConfig, dir, prefix
 	return out, targetDur, nil
 }
 
-// Encoder detection
-
-type encoder struct {
-	name         string
-	args         []string
-	inputArgs    []string
-	filterSuffix string
-	test         func() bool
-}
-
-var (
-	encoderOnce   sync.Once
-	encoderCached encoder
-)
-
-var encoders = []encoder{
-	{
-		name:      "nvenc",
-		args:      []string{"-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-rc", "vbr", "-cq", "30", "-pix_fmt", "yuv420p"},
-		inputArgs: nil,
-		test:      func() bool { return testEnc("h264_nvenc") },
-	},
-	{
-		name:         "vaapi",
-		args:         []string{"-c:v", "h264_vaapi", "-qp", "28"},
-		inputArgs:    []string{"-vaapi_device", "/dev/dri/renderD128"},
-		filterSuffix: ",format=nv12,hwupload",
-		test:         testVAAPI,
-	},
-	{
-		name: "v4l2m2m",
-		args: []string{"-c:v", "h264_v4l2m2m", "-b:v", "2M", "-pix_fmt", "yuv420p"},
-		test: func() bool { return testEnc("h264_v4l2m2m") },
-	},
-	{
-		name: "omx",
-		args: []string{"-c:v", "h264_omx", "-b:v", "2M", "-pix_fmt", "yuv420p"},
-		test: func() bool { return testEnc("h264_omx") },
-	},
-}
-
-var softwareEncoder = encoder{
-	name: "libx264",
-	args: []string{"-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-threads", "0", "-crf", "28", "-pix_fmt", "yuv420p"},
-}
-
 func getEncoder() encoder {
 	encoderOnce.Do(func() {
 		for _, e := range encoders {
@@ -501,8 +499,6 @@ func testEnc(codec string) bool {
 func testVAAPI() bool {
 	return exec.Command(ffmpegBin, "-hide_banner", "-loglevel", "error", "-vaapi_device", "/dev/dri/renderD128", "-f", "lavfi", "-i", "nullsrc=s=256x256:d=1", "-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi", "-frames:v", "1", "-f", "null", "-").Run() == nil
 }
-
-// Helpers
 
 func parseResolution(res string) (int, int) {
 	parts := strings.Split(res, "x")

@@ -5,6 +5,7 @@ import (
 	"craftstory/internal/reddit"
 	"craftstory/internal/storage"
 	"craftstory/internal/telegram"
+	"craftstory/internal/tenor"
 	"craftstory/internal/tts"
 	"craftstory/internal/uploader"
 	"craftstory/internal/video"
@@ -21,6 +22,7 @@ type Service struct {
 	storage     *storage.LocalStorage
 	reddit      *reddit.Client
 	imageSearch *visuals.SearchClient
+	gifSearch   *tenor.Client
 	fetcher     *visuals.Fetcher
 	approval    *telegram.ApprovalService
 }
@@ -34,13 +36,14 @@ type ServiceOptions struct {
 	Storage     *storage.LocalStorage
 	Reddit      *reddit.Client
 	ImageSearch *visuals.SearchClient
+	GIFSearch   *tenor.Client
 	Approval    *telegram.ApprovalService
 }
 
 func NewService(opts ServiceOptions) *Service {
 	var fetcher *visuals.Fetcher
-	if opts.ImageSearch != nil {
-		fetcher = visuals.NewFetcher(opts.ImageSearch, visuals.Config{
+	if opts.ImageSearch != nil || opts.GIFSearch != nil {
+		fetcher = visuals.NewFetcher(opts.ImageSearch, opts.GIFSearch, visuals.Config{
 			MaxDisplayTime: opts.Config.Visuals.MaxDisplayTime,
 			ImageWidth:     opts.Config.Visuals.ImageWidth,
 			ImageHeight:    opts.Config.Visuals.ImageHeight,
@@ -57,6 +60,7 @@ func NewService(opts ServiceOptions) *Service {
 		storage:     opts.Storage,
 		reddit:      opts.Reddit,
 		imageSearch: opts.ImageSearch,
+		gifSearch:   opts.GIFSearch,
 		fetcher:     fetcher,
 		approval:    opts.Approval,
 	}
@@ -92,6 +96,10 @@ func (s *Service) Reddit() *reddit.Client {
 
 func (s *Service) ImageSearch() *visuals.SearchClient {
 	return s.imageSearch
+}
+
+func (s *Service) GIFSearch() *tenor.Client {
+	return s.gifSearch
 }
 
 func (s *Service) Fetcher() *visuals.Fetcher {
