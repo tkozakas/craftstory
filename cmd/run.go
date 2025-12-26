@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"craftstory/internal/app"
-	"craftstory/internal/telegram"
+	"craftstory/internal/distribution/telegram"
 	"craftstory/pkg/config"
 
 	"github.com/spf13/cobra"

@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"craftstory/internal/tts"
+	"craftstory/internal/speech"
 )
 
 var wordSplitRegex = regexp.MustCompile(`\s+`)
@@ -65,7 +65,7 @@ func cleanWord(word string) string {
 	return strings.ToLower(strings.Trim(word, ".,!?;:'\"()[]{}"))
 }
 
-func audioDuration(timings []tts.WordTiming) float64 {
+func audioDuration(timings []speech.WordTiming) float64 {
 	if len(timings) == 0 {
 		return 0
 	}
@@ -86,15 +86,15 @@ func isValidImage(data []byte) bool {
 	return err == nil
 }
 
-func buildVoiceMap(voices []tts.VoiceConfig) map[string]tts.VoiceConfig {
-	m := make(map[string]tts.VoiceConfig, len(voices))
+func buildVoiceMap(voices []speech.VoiceConfig) map[string]speech.VoiceConfig {
+	m := make(map[string]speech.VoiceConfig, len(voices))
 	for _, v := range voices {
 		m[v.Name] = v
 	}
 	return m
 }
 
-func buildSpeakerColors(voiceMap map[string]tts.VoiceConfig) map[string]string {
+func buildSpeakerColors(voiceMap map[string]speech.VoiceConfig) map[string]string {
 	colors := make(map[string]string, len(voiceMap))
 	for name, voice := range voiceMap {
 		if voice.SubtitleColor != "" {

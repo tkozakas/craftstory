@@ -7,20 +7,20 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"craftstory/internal/tts"
+	"craftstory/internal/speech"
 )
 
 const speakerPauseMs = 250
 
 type AudioSegment struct {
 	Audio   []byte
-	Timings []tts.WordTiming
+	Timings []speech.WordTiming
 	Speaker string
 }
 
 type StitchedAudio struct {
 	Data     []byte
-	Timings  []tts.WordTiming
+	Timings  []speech.WordTiming
 	Duration float64
 	Segments []SegmentInfo
 }
@@ -150,8 +150,8 @@ func (s *AudioStitcher) generateSilence(ctx context.Context, outputPath string, 
 	return nil
 }
 
-func (s *AudioStitcher) adjustTimings(segments []AudioSegment) ([]tts.WordTiming, float64, []SegmentInfo) {
-	var allTimings []tts.WordTiming
+func (s *AudioStitcher) adjustTimings(segments []AudioSegment) ([]speech.WordTiming, float64, []SegmentInfo) {
+	var allTimings []speech.WordTiming
 	var segmentInfos []SegmentInfo
 	var offset float64
 	pauseDuration := float64(speakerPauseMs) / 1000.0
@@ -159,7 +159,7 @@ func (s *AudioStitcher) adjustTimings(segments []AudioSegment) ([]tts.WordTiming
 	for i, seg := range segments {
 		segStart := offset
 		for _, t := range seg.Timings {
-			allTimings = append(allTimings, tts.WordTiming{
+			allTimings = append(allTimings, speech.WordTiming{
 				Word:      t.Word,
 				StartTime: t.StartTime + offset,
 				EndTime:   t.EndTime + offset,

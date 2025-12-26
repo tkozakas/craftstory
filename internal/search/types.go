@@ -1,7 +1,8 @@
-package visuals
+package search
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -9,10 +10,28 @@ import (
 	"path/filepath"
 	"strings"
 
-	"craftstory/internal/tts"
+	"craftstory/internal/search/google"
+	"craftstory/internal/search/tenor"
+	"craftstory/internal/speech"
 )
 
-func findKeywordInTimings(timings []tts.WordTiming, keyword string) int {
+type VisualCue struct {
+	Keyword     string `json:"keyword"`
+	SearchQuery string `json:"search_query"`
+	Type        string `json:"type"` // "image" or "gif"
+}
+
+type ImageSearcher interface {
+	Search(ctx context.Context, query string, count int) ([]google.Result, error)
+	DownloadImage(ctx context.Context, imageURL string) ([]byte, error)
+}
+
+type GIFSearcher interface {
+	Search(ctx context.Context, query string, limit int) ([]tenor.GIF, error)
+	Download(ctx context.Context, gifURL string) ([]byte, error)
+}
+
+func findKeywordInTimings(timings []speech.WordTiming, keyword string) int {
 	if keyword == "" || len(timings) == 0 {
 		return -1
 	}
@@ -67,7 +86,7 @@ func findKeywordInTimings(timings []tts.WordTiming, keyword string) int {
 	return -1
 }
 
-func findSpeakerSegmentEnd(timings []tts.WordTiming, startIndex int) float64 {
+func findSpeakerSegmentEnd(timings []speech.WordTiming, startIndex int) float64 {
 	if startIndex < 0 || startIndex >= len(timings) {
 		return 0
 	}

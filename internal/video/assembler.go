@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"craftstory/internal/speech"
 	"craftstory/internal/storage"
-	"craftstory/internal/tts"
 )
 
 const (
@@ -82,7 +82,7 @@ type AssembleRequest struct {
 	AudioDuration float64
 	Script        string
 	OutputPath    string
-	WordTimings   []tts.WordTiming
+	WordTimings   []speech.WordTiming
 	ImageOverlays []ImageOverlay
 	SpeakerColors map[string]string
 }

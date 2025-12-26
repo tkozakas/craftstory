@@ -1,15 +1,17 @@
 package app
 
 import (
-	"craftstory/internal/llm"
-	"craftstory/internal/reddit"
+	"craftstory/internal/content/reddit"
+	"craftstory/internal/distribution"
+	"craftstory/internal/distribution/telegram"
+	"craftstory/internal/distribution/youtube"
+	"craftstory/internal/llm/groq"
+	"craftstory/internal/search/google"
+	"craftstory/internal/search/tenor"
+	"craftstory/internal/speech"
+	"craftstory/internal/speech/elevenlabs"
 	"craftstory/internal/storage"
-	"craftstory/internal/telegram"
-	"craftstory/internal/tenor"
-	"craftstory/internal/tts"
-	"craftstory/internal/uploader"
 	"craftstory/internal/video"
-	"craftstory/internal/visuals"
 	"craftstory/pkg/config"
 	"craftstory/pkg/prompts"
 )
@@ -25,18 +27,18 @@ func BuildService(cfg *config.Config, verbose bool) (*BuildResult, error) {
 		return nil, err
 	}
 
-	llmClient, err := llm.NewGroqClient(cfg.GroqAPIKey, cfg.Groq.Model, p)
+	llmClient, err := groq.NewClient(cfg.GroqAPIKey, cfg.Groq.Model, p)
 	if err != nil {
 		return nil, err
 	}
 
-	var ttsProvider tts.Provider
+	var ttsProvider speech.Provider
 	if cfg.ElevenLabs.Enabled {
 		apiKeys := cfg.ElevenLabsAPIKeys
 		if len(apiKeys) == 0 && cfg.ElevenLabsAPIKey != "" {
 			apiKeys = []string{cfg.ElevenLabsAPIKey}
 		}
-		ttsProvider = tts.NewElevenLabsClient(tts.ElevenLabsConfig{
+		ttsProvider = elevenlabs.NewClient(elevenlabs.Config{
 			APIKeys:    apiKeys,
 			VoiceID:    cfg.ElevenLabs.HostVoice.ID,
 			Speed:      cfg.ElevenLabs.Speed,
@@ -80,9 +82,12 @@ func BuildService(cfg *config.Config, verbose bool) (*BuildResult, error) {
 
 	redditClient := reddit.NewClient()
 
-	var imageSearch *visuals.SearchClient
+	var imageSearch *google.Client
 	if cfg.GoogleSearchAPIKey != "" && cfg.GoogleSearchEngineID != "" {
-		imageSearch = visuals.NewSearchClient(cfg.GoogleSearchAPIKey, cfg.GoogleSearchEngineID)
+		imageSearch = google.NewClient(google.Config{
+			APIKey:   cfg.GoogleSearchAPIKey,
+			EngineID: cfg.GoogleSearchEngineID,
+		})
 	}
 
 	var gifSearch *tenor.Client
@@ -90,10 +95,10 @@ func BuildService(cfg *config.Config, verbose bool) (*BuildResult, error) {
 		gifSearch = tenor.NewClient(tenor.Config{APIKey: cfg.TenorAPIKey})
 	}
 
-	var ytUploader uploader.Uploader
+	var ytUploader distribution.Uploader
 	if cfg.YouTubeClientID != "" && cfg.YouTubeClientSecret != "" {
-		auth := uploader.NewYouTubeAuth(cfg.YouTubeClientID, cfg.YouTubeClientSecret, cfg.YouTubeTokenPath)
-		ytUploader = uploader.NewYouTubeUploader(auth)
+		auth := youtube.NewAuth(cfg.YouTubeClientID, cfg.YouTubeClientSecret, cfg.YouTubeTokenPath)
+		ytUploader = youtube.NewClient(auth)
 	}
 
 	var approval *telegram.ApprovalService

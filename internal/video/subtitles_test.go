@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"craftstory/internal/tts"
+	"craftstory/internal/speech"
 )
 
 func TestGenerate(t *testing.T) {
@@ -194,7 +194,7 @@ func TestSubtitleWords(t *testing.T) {
 func TestGenerateFromTimings(t *testing.T) {
 	gen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
 
-	timings := []tts.WordTiming{
+	timings := []speech.WordTiming{
 		{Word: "Hello", StartTime: 0.0, EndTime: 0.5},
 		{Word: "world", StartTime: 0.6, EndTime: 1.1},
 	}
@@ -244,14 +244,14 @@ func TestGenerateFromTimingsWithOffset(t *testing.T) {
 	tests := []struct {
 		name           string
 		offset         float64
-		timings        []tts.WordTiming
+		timings        []speech.WordTiming
 		wantStartTimes []float64
 		wantEndTimes   []float64
 	}{
 		{
 			name:   "positiveOffset",
 			offset: 0.5,
-			timings: []tts.WordTiming{
+			timings: []speech.WordTiming{
 				{Word: "Hello", StartTime: 0.0, EndTime: 0.5},
 				{Word: "world", StartTime: 0.6, EndTime: 1.1},
 			},
@@ -261,7 +261,7 @@ func TestGenerateFromTimingsWithOffset(t *testing.T) {
 		{
 			name:   "negativeOffset",
 			offset: -0.2,
-			timings: []tts.WordTiming{
+			timings: []speech.WordTiming{
 				{Word: "Hello", StartTime: 0.5, EndTime: 1.0},
 				{Word: "world", StartTime: 1.0, EndTime: 1.5},
 			},
@@ -271,7 +271,7 @@ func TestGenerateFromTimingsWithOffset(t *testing.T) {
 		{
 			name:   "negativeOffsetClampsToZero",
 			offset: -1.0,
-			timings: []tts.WordTiming{
+			timings: []speech.WordTiming{
 				{Word: "Hello", StartTime: 0.0, EndTime: 0.5},
 				{Word: "world", StartTime: 0.6, EndTime: 1.1},
 			},
@@ -281,7 +281,7 @@ func TestGenerateFromTimingsWithOffset(t *testing.T) {
 		{
 			name:   "zeroOffset",
 			offset: 0.0,
-			timings: []tts.WordTiming{
+			timings: []speech.WordTiming{
 				{Word: "Hello", StartTime: 0.0, EndTime: 0.5},
 				{Word: "world", StartTime: 0.6, EndTime: 1.1},
 			},
@@ -321,7 +321,7 @@ func TestGenerateFromTimingsWithOffset(t *testing.T) {
 func TestGenerateFromTimingsWithSpeakerColors(t *testing.T) {
 	gen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
 
-	timings := []tts.WordTiming{
+	timings := []speech.WordTiming{
 		{Word: "Hello", StartTime: 0.0, EndTime: 0.5, Speaker: "Adam"},
 		{Word: "there", StartTime: 0.6, EndTime: 1.0, Speaker: "Adam"},
 		{Word: "Hi", StartTime: 1.1, EndTime: 1.5, Speaker: "Bella"},
@@ -397,7 +397,7 @@ func TestToASSColor(t *testing.T) {
 func TestSubtitleTimingSyncWithTTS(t *testing.T) {
 	gen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
 
-	timings := []tts.WordTiming{
+	timings := []speech.WordTiming{
 		{Word: "The", StartTime: 0.0, EndTime: 0.2},
 		{Word: "quick", StartTime: 0.25, EndTime: 0.5},
 		{Word: "brown", StartTime: 0.55, EndTime: 0.8},
@@ -422,7 +422,7 @@ func TestSubtitleTimingSyncWithTTS(t *testing.T) {
 func TestSubtitleNoOverlap(t *testing.T) {
 	gen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
 
-	timings := []tts.WordTiming{
+	timings := []speech.WordTiming{
 		{Word: "Hello", StartTime: 0.0, EndTime: 0.5},
 		{Word: "world", StartTime: 0.6, EndTime: 1.1},
 		{Word: "test", StartTime: 1.2, EndTime: 1.8},
@@ -439,7 +439,7 @@ func TestSubtitleNoOverlap(t *testing.T) {
 }
 
 func TestImageOverlayTimingWithTTS(t *testing.T) {
-	timings := []tts.WordTiming{
+	timings := []speech.WordTiming{
 		{Word: "The", StartTime: 0.0, EndTime: 0.2, Speaker: "Adam"},
 		{Word: "quick", StartTime: 0.25, EndTime: 0.5, Speaker: "Adam"},
 		{Word: "fox", StartTime: 0.55, EndTime: 0.8, Speaker: "Adam"},
@@ -471,7 +471,7 @@ func TestImageOverlayTimingWithTTS(t *testing.T) {
 }
 
 func TestImageOverlayExtendedToSpeakerSegment(t *testing.T) {
-	timings := []tts.WordTiming{
+	timings := []speech.WordTiming{
 		{Word: "The", StartTime: 0.0, EndTime: 0.2, Speaker: "Adam"},
 		{Word: "quick", StartTime: 0.25, EndTime: 0.5, Speaker: "Adam"},
 		{Word: "fox", StartTime: 0.55, EndTime: 0.8, Speaker: "Adam"},
@@ -497,7 +497,7 @@ func TestImageOverlayExtendedToSpeakerSegment(t *testing.T) {
 	}
 }
 
-func findSpeakerSegmentEnd(timings []tts.WordTiming, startIndex int) float64 {
+func findSpeakerSegmentEnd(timings []speech.WordTiming, startIndex int) float64 {
 	if startIndex < 0 || startIndex >= len(timings) {
 		return 0
 	}
@@ -535,7 +535,7 @@ func TestMultipleImageOverlaysNoOverlap(t *testing.T) {
 func TestConversationSubtitleSync(t *testing.T) {
 	gen := NewSubtitleGenerator(SubtitleOptions{FontName: "Arial", FontSize: 48})
 
-	timings := []tts.WordTiming{
+	timings := []speech.WordTiming{
 		{Word: "Hello", StartTime: 0.0, EndTime: 0.3, Speaker: "Adam"},
 		{Word: "there", StartTime: 0.35, EndTime: 0.6, Speaker: "Adam"},
 		{Word: "Hi", StartTime: 0.7, EndTime: 0.9, Speaker: "Bella"},

@@ -1,4 +1,4 @@
-package uploader
+package youtube
 
 import (
 	"bytes"
@@ -13,26 +13,28 @@ import (
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+
+	"craftstory/internal/distribution"
 )
 
 const (
-	youtubeUploadURL  = "https://www.googleapis.com/upload/youtube/v3/videos"
-	youtubeVideosURL  = "https://www.googleapis.com/youtube/v3/videos"
-	youtubeCategoryID = "22"
-	youtubePlatform   = "youtube"
+	uploadURL  = "https://www.googleapis.com/upload/youtube/v3/videos"
+	videosURL  = "https://www.googleapis.com/youtube/v3/videos"
+	categoryID = "22"
+	platform   = "youtube"
 )
 
-type YouTubeUploader struct {
-	auth *YouTubeAuth
+type Client struct {
+	auth *Auth
 }
 
-type YouTubeAuth struct {
+type Auth struct {
 	config    *oauth2.Config
 	token     *oauth2.Token
 	tokenPath string
 }
 
-type youtubeUploadResponse struct {
+type uploadResponse struct {
 	ID   string `json:"id"`
 	Kind string `json:"kind"`
 }
@@ -53,30 +55,30 @@ type videoMetadata struct {
 	Status  videoStatus  `json:"status"`
 }
 
-var youtubeScopes = []string{
+var scopes = []string{
 	"https://www.googleapis.com/auth/youtube.upload",
 	"https://www.googleapis.com/auth/youtube",
 }
 
-func NewYouTubeAuth(clientID, clientSecret, tokenPath string) *YouTubeAuth {
-	return &YouTubeAuth{
+func NewAuth(clientID, clientSecret, tokenPath string) *Auth {
+	return &Auth{
 		config: &oauth2.Config{
 			ClientID:     clientID,
 			ClientSecret: clientSecret,
 			Endpoint:     google.Endpoint,
-			Scopes:       youtubeScopes,
+			Scopes:       scopes,
 			RedirectURL:  "http://localhost:8080/callback",
 		},
 		tokenPath: tokenPath,
 	}
 }
 
-func NewYouTubeUploader(auth *YouTubeAuth) *YouTubeUploader {
-	return &YouTubeUploader{auth: auth}
+func NewClient(auth *Auth) *Client {
+	return &Client{auth: auth}
 }
 
-func (u *YouTubeUploader) Upload(ctx context.Context, req UploadRequest) (*UploadResponse, error) {
-	httpClient, err := u.auth.Client(ctx)
+func (c *Client) Upload(ctx context.Context, req distribution.UploadRequest) (*distribution.UploadResponse, error) {
+	httpClient, err := c.auth.Client(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get auth client: %w", err)
 	}
@@ -86,7 +88,7 @@ func (u *YouTubeUploader) Upload(ctx context.Context, req UploadRequest) (*Uploa
 			Title:       req.Title,
 			Description: req.Description,
 			Tags:        req.Tags,
-			CategoryID:  youtubeCategoryID,
+			CategoryID:  categoryID,
 		},
 		Status: videoStatus{
 			PrivacyStatus: req.Privacy,
@@ -127,7 +129,7 @@ func (u *YouTubeUploader) Upload(ctx context.Context, req UploadRequest) (*Uploa
 		return nil, fmt.Errorf("failed to close writer: %w", err)
 	}
 
-	url := fmt.Sprintf("%s?uploadType=multipart&part=snippet,status", youtubeUploadURL)
+	url := fmt.Sprintf("%s?uploadType=multipart&part=snippet,status", uploadURL)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -150,20 +152,20 @@ func (u *YouTubeUploader) Upload(ctx context.Context, req UploadRequest) (*Uploa
 		return nil, fmt.Errorf("upload failed: %s", string(respBody))
 	}
 
-	var uploadResp youtubeUploadResponse
+	var uploadResp uploadResponse
 	if err := json.Unmarshal(respBody, &uploadResp); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return &UploadResponse{
+	return &distribution.UploadResponse{
 		ID:       uploadResp.ID,
 		URL:      fmt.Sprintf("https://youtube.com/watch?v=%s", uploadResp.ID),
-		Platform: youtubePlatform,
+		Platform: platform,
 	}, nil
 }
 
-func (u *YouTubeUploader) SetPrivacy(ctx context.Context, videoID, privacy string) error {
-	httpClient, err := u.auth.Client(ctx)
+func (c *Client) SetPrivacy(ctx context.Context, videoID, privacy string) error {
+	httpClient, err := c.auth.Client(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get auth client: %w", err)
 	}
@@ -180,7 +182,7 @@ func (u *YouTubeUploader) SetPrivacy(ctx context.Context, videoID, privacy strin
 		return fmt.Errorf("failed to marshal body: %w", err)
 	}
 
-	url := fmt.Sprintf("%s?part=status", youtubeVideosURL)
+	url := fmt.Sprintf("%s?part=status", videosURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewBuffer(bodyJSON))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -202,15 +204,15 @@ func (u *YouTubeUploader) SetPrivacy(ctx context.Context, videoID, privacy strin
 	return nil
 }
 
-func (u *YouTubeUploader) Platform() string {
-	return youtubePlatform
+func (c *Client) Platform() string {
+	return platform
 }
 
-func (u *YouTubeUploader) Auth() *YouTubeAuth {
-	return u.auth
+func (c *Client) Auth() *Auth {
+	return c.auth
 }
 
-func (a *YouTubeAuth) LoadToken() error {
+func (a *Auth) LoadToken() error {
 	data, err := os.ReadFile(a.tokenPath)
 	if err != nil {
 		return fmt.Errorf("failed to read token file: %w", err)
@@ -225,7 +227,7 @@ func (a *YouTubeAuth) LoadToken() error {
 	return nil
 }
 
-func (a *YouTubeAuth) SaveToken() error {
+func (a *Auth) SaveToken() error {
 	data, err := json.MarshalIndent(a.token, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal token: %w", err)
@@ -238,11 +240,11 @@ func (a *YouTubeAuth) SaveToken() error {
 	return nil
 }
 
-func (a *YouTubeAuth) GetAuthURL() string {
+func (a *Auth) GetAuthURL() string {
 	return a.config.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
 }
 
-func (a *YouTubeAuth) Exchange(ctx context.Context, code string) error {
+func (a *Auth) Exchange(ctx context.Context, code string) error {
 	token, err := a.config.Exchange(ctx, code)
 	if err != nil {
 		return fmt.Errorf("failed to exchange code: %w", err)
@@ -252,7 +254,7 @@ func (a *YouTubeAuth) Exchange(ctx context.Context, code string) error {
 	return a.SaveToken()
 }
 
-func (a *YouTubeAuth) Client(ctx context.Context) (*http.Client, error) {
+func (a *Auth) Client(ctx context.Context) (*http.Client, error) {
 	if a.token == nil {
 		if err := a.LoadToken(); err != nil {
 			return nil, err
@@ -262,7 +264,7 @@ func (a *YouTubeAuth) Client(ctx context.Context) (*http.Client, error) {
 	return a.config.Client(ctx, a.token), nil
 }
 
-func (a *YouTubeAuth) IsAuthenticated() bool {
+func (a *Auth) IsAuthenticated() bool {
 	if a.token == nil {
 		if err := a.LoadToken(); err != nil {
 			return false
@@ -270,3 +272,5 @@ func (a *YouTubeAuth) IsAuthenticated() bool {
 	}
 	return a.token != nil && a.token.Valid()
 }
+
+var _ distribution.Uploader = (*Client)(nil)

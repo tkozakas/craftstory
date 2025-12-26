@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"craftstory/internal/tts"
+	"craftstory/internal/speech"
 )
 
 type Subtitle struct {
@@ -83,11 +83,11 @@ func toASSColor(color string) string {
 	return "&H00FFFFFF"
 }
 
-func (g *SubtitleGenerator) GenerateFromTimings(timings []tts.WordTiming) []Subtitle {
+func (g *SubtitleGenerator) GenerateFromTimings(timings []speech.WordTiming) []Subtitle {
 	return g.GenerateFromTimingsWithColors(timings, nil)
 }
 
-func (g *SubtitleGenerator) GenerateFromTimingsWithColors(timings []tts.WordTiming, speakerColors map[string]string) []Subtitle {
+func (g *SubtitleGenerator) GenerateFromTimingsWithColors(timings []speech.WordTiming, speakerColors map[string]string) []Subtitle {
 	subtitles := make([]Subtitle, 0, len(timings))
 	for _, t := range timings {
 		startTime := t.StartTime + g.offset

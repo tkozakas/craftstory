@@ -1,4 +1,4 @@
-package tts
+package speech
 
 import (
 	"context"
@@ -29,7 +29,7 @@ type Provider interface {
 	GenerateSpeechWithVoice(ctx context.Context, text string, voice VoiceConfig) (*SpeechResult, error)
 }
 
-func estimateTimingsFromDuration(text string, duration float64) []WordTiming {
+func EstimateTimingsFromDuration(text string, duration float64) []WordTiming {
 	words := strings.Fields(text)
 	if len(words) == 0 {
 		return nil
@@ -60,17 +60,17 @@ func estimateTimingsFromDuration(text string, duration float64) []WordTiming {
 	return timings
 }
 
-func estimateTimings(text string, audio []byte) []WordTiming {
-	duration := estimateAudioDuration(audio)
-	return estimateTimingsFromDuration(text, duration)
+func EstimateTimings(text string, audio []byte) []WordTiming {
+	duration := EstimateAudioDuration(audio)
+	return EstimateTimingsFromDuration(text, duration)
 }
 
-func estimateAudioDuration(audio []byte) float64 {
+func EstimateAudioDuration(audio []byte) float64 {
 	bitrate := 128000.0
 	return float64(len(audio)*8) / bitrate
 }
 
-func addPauses(text string) string {
+func AddPauses(text string) string {
 	text = strings.ReplaceAll(text, "...", "…")
 	text = strings.ReplaceAll(text, ". ", "... ")
 	text = strings.ReplaceAll(text, "! ", "!.. ")

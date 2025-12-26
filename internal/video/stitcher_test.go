@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"craftstory/internal/tts"
+	"craftstory/internal/speech"
 )
 
 func TestNewAudioStitcher(t *testing.T) {
@@ -31,15 +31,15 @@ func TestAdjustTimings(t *testing.T) {
 		wantTimings  int
 		wantDuration float64
 		wantSegments int
-		wantFirst    tts.WordTiming
-		wantLast     tts.WordTiming
+		wantFirst    speech.WordTiming
+		wantLast     speech.WordTiming
 	}{
 		{
 			name: "singleSegment",
 			segments: []AudioSegment{
 				{
 					Speaker: "Alice",
-					Timings: []tts.WordTiming{
+					Timings: []speech.WordTiming{
 						{Word: "Hello", StartTime: 0, EndTime: 0.5},
 						{Word: "World", StartTime: 0.5, EndTime: 1.0},
 					},
@@ -48,22 +48,22 @@ func TestAdjustTimings(t *testing.T) {
 			wantTimings:  2,
 			wantDuration: 1.0,
 			wantSegments: 1,
-			wantFirst:    tts.WordTiming{Word: "Hello", StartTime: 0, EndTime: 0.5, Speaker: "Alice"},
-			wantLast:     tts.WordTiming{Word: "World", StartTime: 0.5, EndTime: 1.0, Speaker: "Alice"},
+			wantFirst:    speech.WordTiming{Word: "Hello", StartTime: 0, EndTime: 0.5, Speaker: "Alice"},
+			wantLast:     speech.WordTiming{Word: "World", StartTime: 0.5, EndTime: 1.0, Speaker: "Alice"},
 		},
 		{
 			name: "twoSegments",
 			segments: []AudioSegment{
 				{
 					Speaker: "Alice",
-					Timings: []tts.WordTiming{
+					Timings: []speech.WordTiming{
 						{Word: "First", StartTime: 0, EndTime: 0.5},
 						{Word: "Part", StartTime: 0.5, EndTime: 1.0},
 					},
 				},
 				{
 					Speaker: "Bob",
-					Timings: []tts.WordTiming{
+					Timings: []speech.WordTiming{
 						{Word: "Second", StartTime: 0, EndTime: 0.5},
 						{Word: "Part", StartTime: 0.5, EndTime: 1.0},
 					},
@@ -72,25 +72,25 @@ func TestAdjustTimings(t *testing.T) {
 			wantTimings:  4,
 			wantDuration: 2.0 + pause,
 			wantSegments: 2,
-			wantFirst:    tts.WordTiming{Word: "First", StartTime: 0, EndTime: 0.5, Speaker: "Alice"},
-			wantLast:     tts.WordTiming{Word: "Part", StartTime: 1.0 + pause + 0.5, EndTime: 2.0 + pause, Speaker: "Bob"},
+			wantFirst:    speech.WordTiming{Word: "First", StartTime: 0, EndTime: 0.5, Speaker: "Alice"},
+			wantLast:     speech.WordTiming{Word: "Part", StartTime: 1.0 + pause + 0.5, EndTime: 2.0 + pause, Speaker: "Bob"},
 		},
 		{
 			name: "threeSegments",
 			segments: []AudioSegment{
-				{Speaker: "A", Timings: []tts.WordTiming{{Word: "A", StartTime: 0, EndTime: 1.0}}},
-				{Speaker: "B", Timings: []tts.WordTiming{{Word: "B", StartTime: 0, EndTime: 1.0}}},
-				{Speaker: "C", Timings: []tts.WordTiming{{Word: "C", StartTime: 0, EndTime: 1.0}}},
+				{Speaker: "A", Timings: []speech.WordTiming{{Word: "A", StartTime: 0, EndTime: 1.0}}},
+				{Speaker: "B", Timings: []speech.WordTiming{{Word: "B", StartTime: 0, EndTime: 1.0}}},
+				{Speaker: "C", Timings: []speech.WordTiming{{Word: "C", StartTime: 0, EndTime: 1.0}}},
 			},
 			wantTimings:  3,
 			wantDuration: 3.0 + 2*pause,
 			wantSegments: 3,
-			wantFirst:    tts.WordTiming{Word: "A", StartTime: 0, EndTime: 1.0, Speaker: "A"},
-			wantLast:     tts.WordTiming{Word: "C", StartTime: 2.0 + 2*pause, EndTime: 3.0 + 2*pause, Speaker: "C"},
+			wantFirst:    speech.WordTiming{Word: "A", StartTime: 0, EndTime: 1.0, Speaker: "A"},
+			wantLast:     speech.WordTiming{Word: "C", StartTime: 2.0 + 2*pause, EndTime: 3.0 + 2*pause, Speaker: "C"},
 		},
 		{
 			name:         "emptySegments",
-			segments:     []AudioSegment{{Timings: []tts.WordTiming{}}},
+			segments:     []AudioSegment{{Timings: []speech.WordTiming{}}},
 			wantTimings:  0,
 			wantDuration: 0,
 			wantSegments: 1,
@@ -139,7 +139,7 @@ func TestStitchSingleSegment(t *testing.T) {
 
 	segment := AudioSegment{
 		Audio: []byte("fake audio data"),
-		Timings: []tts.WordTiming{
+		Timings: []speech.WordTiming{
 			{Word: "Test", StartTime: 0, EndTime: 1.0},
 		},
 	}
@@ -165,7 +165,7 @@ func TestStitchSingleSegmentNoTimings(t *testing.T) {
 
 	segment := AudioSegment{
 		Audio:   []byte("fake audio data"),
-		Timings: []tts.WordTiming{},
+		Timings: []speech.WordTiming{},
 	}
 
 	result, err := stitcher.Stitch(t.Context(), []AudioSegment{segment})
@@ -192,11 +192,11 @@ func TestStitchMultipleSegmentsWithFFmpeg(t *testing.T) {
 	segments := []AudioSegment{
 		{
 			Audio:   silentMP3,
-			Timings: []tts.WordTiming{{Word: "Hello", StartTime: 0, EndTime: 0.1}},
+			Timings: []speech.WordTiming{{Word: "Hello", StartTime: 0, EndTime: 0.1}},
 		},
 		{
 			Audio:   silentMP3,
-			Timings: []tts.WordTiming{{Word: "World", StartTime: 0, EndTime: 0.1}},
+			Timings: []speech.WordTiming{{Word: "World", StartTime: 0, EndTime: 0.1}},
 		},
 	}
 
@@ -227,8 +227,8 @@ func TestStitchWriteSegmentError(t *testing.T) {
 	stitcher := NewAudioStitcher("/nonexistent/directory")
 
 	segments := []AudioSegment{
-		{Audio: []byte("data1"), Timings: []tts.WordTiming{{Word: "A", StartTime: 0, EndTime: 1}}},
-		{Audio: []byte("data2"), Timings: []tts.WordTiming{{Word: "B", StartTime: 0, EndTime: 1}}},
+		{Audio: []byte("data1"), Timings: []speech.WordTiming{{Word: "A", StartTime: 0, EndTime: 1}}},
+		{Audio: []byte("data2"), Timings: []speech.WordTiming{{Word: "B", StartTime: 0, EndTime: 1}}},
 	}
 
 	_, err := stitcher.Stitch(context.Background(), segments)
@@ -246,8 +246,8 @@ func TestStitchFFmpegError(t *testing.T) {
 	stitcher := NewAudioStitcher(tmpDir)
 
 	segments := []AudioSegment{
-		{Audio: []byte("not valid mp3"), Timings: []tts.WordTiming{{Word: "A", StartTime: 0, EndTime: 1}}},
-		{Audio: []byte("also invalid"), Timings: []tts.WordTiming{{Word: "B", StartTime: 0, EndTime: 1}}},
+		{Audio: []byte("not valid mp3"), Timings: []speech.WordTiming{{Word: "A", StartTime: 0, EndTime: 1}}},
+		{Audio: []byte("also invalid"), Timings: []speech.WordTiming{{Word: "B", StartTime: 0, EndTime: 1}}},
 	}
 
 	_, err := stitcher.Stitch(context.Background(), segments)
@@ -278,8 +278,8 @@ func TestStitchUsesAbsolutePaths(t *testing.T) {
 	silentMP3 := createSilentMP3(t)
 
 	segments := []AudioSegment{
-		{Audio: silentMP3, Timings: []tts.WordTiming{{Word: "A", StartTime: 0, EndTime: 0.1}}},
-		{Audio: silentMP3, Timings: []tts.WordTiming{{Word: "B", StartTime: 0, EndTime: 0.1}}},
+		{Audio: silentMP3, Timings: []speech.WordTiming{{Word: "A", StartTime: 0, EndTime: 0.1}}},
+		{Audio: silentMP3, Timings: []speech.WordTiming{{Word: "B", StartTime: 0, EndTime: 0.1}}},
 	}
 
 	result, err := stitcher.Stitch(context.Background(), segments)

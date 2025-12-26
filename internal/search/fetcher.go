@@ -1,4 +1,4 @@
-package visuals
+package search
 
 import (
 	"context"
@@ -7,43 +7,35 @@ import (
 	"sort"
 	"strings"
 
-	"craftstory/internal/llm"
-	"craftstory/internal/tenor"
-	"craftstory/internal/tts"
+	"craftstory/internal/speech"
 	"craftstory/internal/video"
 )
 
-type ImageSearcher interface {
-	Search(ctx context.Context, query string, count int) ([]SearchResult, error)
-	DownloadImage(ctx context.Context, imageURL string) ([]byte, error)
-}
-
-type GIFSearcher interface {
-	Search(ctx context.Context, query string, limit int) ([]tenor.GIF, error)
-	Download(ctx context.Context, gifURL string) ([]byte, error)
-}
-
-type Config struct {
+// FetcherConfig configures the visual fetcher.
+type FetcherConfig struct {
 	MaxDisplayTime float64
 	ImageWidth     int
 	ImageHeight    int
 	MinGap         float64
 }
 
+// FetchRequest contains parameters for fetching visuals.
 type FetchRequest struct {
 	Script   string
-	Visuals  []llm.VisualCue
-	Timings  []tts.WordTiming
+	Visuals  []VisualCue
+	Timings  []speech.WordTiming
 	ImageDir string
 }
 
+// Fetcher fetches images and GIFs based on visual cues.
 type Fetcher struct {
 	imageSearch ImageSearcher
 	gifSearch   GIFSearcher
-	cfg         Config
+	cfg         FetcherConfig
 }
 
-func NewFetcher(imageSearch ImageSearcher, gifSearch GIFSearcher, cfg Config) *Fetcher {
+// NewFetcher creates a new visual fetcher.
+func NewFetcher(imageSearch ImageSearcher, gifSearch GIFSearcher, cfg FetcherConfig) *Fetcher {
 	return &Fetcher{
 		imageSearch: imageSearch,
 		gifSearch:   gifSearch,
@@ -51,6 +43,7 @@ func NewFetcher(imageSearch ImageSearcher, gifSearch GIFSearcher, cfg Config) *F
 	}
 }
 
+// Fetch fetches visuals for the given request and returns image overlays.
 func (f *Fetcher) Fetch(ctx context.Context, req FetchRequest) []video.ImageOverlay {
 	if f.imageSearch == nil && f.gifSearch == nil {
 		slog.Warn("No search clients configured")
@@ -84,7 +77,7 @@ func (f *Fetcher) Fetch(ctx context.Context, req FetchRequest) []video.ImageOver
 	return f.enforceConstraints(overlays)
 }
 
-func (f *Fetcher) fetchSingle(ctx context.Context, imageDir string, index int, cue llm.VisualCue, timings []tts.WordTiming) *video.ImageOverlay {
+func (f *Fetcher) fetchSingle(ctx context.Context, imageDir string, index int, cue VisualCue, timings []speech.WordTiming) *video.ImageOverlay {
 	wordIndex := findKeywordInTimings(timings, cue.Keyword)
 	if wordIndex < 0 {
 		slog.Warn("Keyword not found in timings", "keyword", cue.Keyword)

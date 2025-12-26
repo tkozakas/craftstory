@@ -1,4 +1,4 @@
-package tts
+package elevenlabs
 
 import (
 	"context"
@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"craftstory/internal/speech"
 )
 
-func TestNewElevenLabsClient(t *testing.T) {
-	client := newTestClient(ElevenLabsConfig{
+func TestNewClient(t *testing.T) {
+	client := newTestClient(Config{
 		APIKeys: []string{"test-key"},
 		VoiceID: "test-voice",
 		Speed:   1.0,
@@ -24,8 +26,8 @@ func TestNewElevenLabsClient(t *testing.T) {
 	}
 }
 
-func TestNewElevenLabsClientMultipleKeys(t *testing.T) {
-	client := newTestClient(ElevenLabsConfig{
+func TestNewClientMultipleKeys(t *testing.T) {
+	client := newTestClient(Config{
 		APIKeys: []string{"key1", "key2", "key3"},
 		VoiceID: "test-voice",
 	})
@@ -65,7 +67,7 @@ func TestGenerateSpeechWithTimings(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(ElevenLabsConfig{
+	client := newTestClient(Config{
 		APIKeys:    []string{"test-key"},
 		VoiceID:    "test-voice",
 		Speed:      1.0,
@@ -110,12 +112,12 @@ func TestGenerateSpeechWithVoice(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(ElevenLabsConfig{
+	client := newTestClient(Config{
 		APIKeys: []string{"test-key"},
 		VoiceID: "default-voice",
 	}, withBaseURL(server.URL), withHTTPClient(server.Client()))
 
-	voice := VoiceConfig{
+	voice := speech.VoiceConfig{
 		ID:            "custom-voice",
 		Name:          "Bella",
 		SubtitleColor: "#FF69B4",
@@ -142,12 +144,12 @@ func TestGenerateSpeechWithVoiceDefaultFallback(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(ElevenLabsConfig{
+	client := newTestClient(Config{
 		APIKeys: []string{"test-key"},
 		VoiceID: "default-voice",
 	}, withBaseURL(server.URL), withHTTPClient(server.Client()))
 
-	voice := VoiceConfig{ID: "", Name: "NoVoice"}
+	voice := speech.VoiceConfig{ID: "", Name: "NoVoice"}
 
 	result, err := client.GenerateSpeechWithVoice(context.Background(), "Hello", voice)
 	if err != nil {
@@ -166,7 +168,7 @@ func TestAPIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(ElevenLabsConfig{
+	client := newTestClient(Config{
 		APIKeys: []string{"bad-key"},
 		VoiceID: "test-voice",
 	}, withBaseURL(server.URL), withHTTPClient(server.Client()))
@@ -192,7 +194,7 @@ func TestGenerateSpeech(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(ElevenLabsConfig{
+	client := newTestClient(Config{
 		APIKeys: []string{"test-key"},
 		VoiceID: "test-voice",
 	}, withBaseURL(server.URL), withHTTPClient(server.Client()))
@@ -209,7 +211,7 @@ func TestGenerateSpeech(t *testing.T) {
 
 func TestKeyRotation(t *testing.T) {
 	keys := []string{"key1", "key2", "key3"}
-	client := newTestClient(ElevenLabsConfig{APIKeys: keys})
+	client := newTestClient(Config{APIKeys: keys})
 
 	seen := make(map[string]int)
 	for range 6 {
@@ -225,7 +227,7 @@ func TestKeyRotation(t *testing.T) {
 }
 
 func TestKeyRotationSingleKey(t *testing.T) {
-	client := newTestClient(ElevenLabsConfig{APIKeys: []string{"single-key"}})
+	client := newTestClient(Config{APIKeys: []string{"single-key"}})
 
 	for range 5 {
 		key := client.nextAPIKey()
@@ -235,6 +237,6 @@ func TestKeyRotationSingleKey(t *testing.T) {
 	}
 }
 
-func newTestClient(cfg ElevenLabsConfig, opts ...elevenLabsOption) *elevenLabsClient {
-	return newElevenLabsClient(cfg, opts...)
+func newTestClient(cfg Config, opts ...option) *Client {
+	return newClient(cfg, opts...)
 }

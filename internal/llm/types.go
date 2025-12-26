@@ -14,5 +14,3 @@ type Client interface {
 	GenerateVisuals(ctx context.Context, script string, count int) ([]VisualCue, error)
 	GenerateTitle(ctx context.Context, script string) (string, error)
 }
-
-var _ Client = (*GroqClient)(nil)

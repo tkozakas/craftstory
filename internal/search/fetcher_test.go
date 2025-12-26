@@ -1,9 +1,9 @@
-package visuals
+package search
 
 import (
 	"testing"
 
-	"craftstory/internal/tts"
+	"craftstory/internal/speech"
 	"craftstory/internal/video"
 )
 
@@ -76,7 +76,7 @@ func TestEnforceConstraints(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f := &Fetcher{cfg: Config{MinGap: tt.minGap}}
+			f := &Fetcher{cfg: FetcherConfig{MinGap: tt.minGap}}
 			got := f.enforceConstraints(tt.overlays)
 			if len(got) != tt.wantCount {
 				t.Errorf("enforceConstraints() returned %d overlays, want %d", len(got), tt.wantCount)
@@ -89,7 +89,7 @@ func TestEnforceConstraints(t *testing.T) {
 }
 
 func TestFindKeywordInTimings(t *testing.T) {
-	timings := []tts.WordTiming{
+	timings := []speech.WordTiming{
 		{Word: "The", StartTime: 0, EndTime: 0.2},
 		{Word: "quick", StartTime: 0.2, EndTime: 0.5},
 		{Word: "brown", StartTime: 0.5, EndTime: 0.8},
@@ -99,7 +99,7 @@ func TestFindKeywordInTimings(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		timings []tts.WordTiming
+		timings []speech.WordTiming
 		keyword string
 		want    int
 	}{
@@ -129,7 +129,7 @@ func TestFindKeywordInTimings(t *testing.T) {
 		},
 		{
 			name: "withPunctuation",
-			timings: []tts.WordTiming{
+			timings: []speech.WordTiming{
 				{Word: "Look,", StartTime: 0, EndTime: 0.3},
 				{Word: "a", StartTime: 0.3, EndTime: 0.4},
 				{Word: "cat!", StartTime: 0.4, EndTime: 0.7},
@@ -151,7 +151,7 @@ func TestFindKeywordInTimings(t *testing.T) {
 		},
 		{
 			name: "multiWordKeyword",
-			timings: []tts.WordTiming{
+			timings: []speech.WordTiming{
 				{Word: "The", StartTime: 0, EndTime: 0.2},
 				{Word: "blue", StartTime: 0.2, EndTime: 0.4},
 				{Word: "ringed", StartTime: 0.4, EndTime: 0.6},
@@ -162,7 +162,7 @@ func TestFindKeywordInTimings(t *testing.T) {
 		},
 		{
 			name:    "partialMatch",
-			timings: []tts.WordTiming{{Word: "octopuses", StartTime: 0, EndTime: 0.5}},
+			timings: []speech.WordTiming{{Word: "octopuses", StartTime: 0, EndTime: 0.5}},
 			keyword: "octopus",
 			want:    0,
 		},
@@ -242,13 +242,13 @@ func TestIsValidImage(t *testing.T) {
 func TestFindSpeakerSegmentEnd(t *testing.T) {
 	tests := []struct {
 		name       string
-		timings    []tts.WordTiming
+		timings    []speech.WordTiming
 		startIndex int
 		want       float64
 	}{
 		{
 			name: "singleSpeaker",
-			timings: []tts.WordTiming{
+			timings: []speech.WordTiming{
 				{Word: "Hello", StartTime: 0, EndTime: 0.5, Speaker: "Alice"},
 				{Word: "world", StartTime: 0.5, EndTime: 1.0, Speaker: "Alice"},
 				{Word: "today", StartTime: 1.0, EndTime: 1.5, Speaker: "Alice"},
@@ -258,7 +258,7 @@ func TestFindSpeakerSegmentEnd(t *testing.T) {
 		},
 		{
 			name: "speakerChangesMidway",
-			timings: []tts.WordTiming{
+			timings: []speech.WordTiming{
 				{Word: "Hello", StartTime: 0, EndTime: 0.5, Speaker: "Alice"},
 				{Word: "world", StartTime: 0.5, EndTime: 1.0, Speaker: "Alice"},
 				{Word: "Hi", StartTime: 1.0, EndTime: 1.5, Speaker: "Bob"},
@@ -269,7 +269,7 @@ func TestFindSpeakerSegmentEnd(t *testing.T) {
 		},
 		{
 			name: "startFromMiddle",
-			timings: []tts.WordTiming{
+			timings: []speech.WordTiming{
 				{Word: "Hello", StartTime: 0, EndTime: 0.5, Speaker: "Alice"},
 				{Word: "world", StartTime: 0.5, EndTime: 1.0, Speaker: "Alice"},
 				{Word: "Hi", StartTime: 1.0, EndTime: 1.5, Speaker: "Bob"},
@@ -280,7 +280,7 @@ func TestFindSpeakerSegmentEnd(t *testing.T) {
 		},
 		{
 			name: "emptySpeaker",
-			timings: []tts.WordTiming{
+			timings: []speech.WordTiming{
 				{Word: "Hello", StartTime: 0, EndTime: 0.5, Speaker: ""},
 				{Word: "world", StartTime: 0.5, EndTime: 1.0, Speaker: ""},
 			},
@@ -289,13 +289,13 @@ func TestFindSpeakerSegmentEnd(t *testing.T) {
 		},
 		{
 			name:       "invalidIndex",
-			timings:    []tts.WordTiming{},
+			timings:    []speech.WordTiming{},
 			startIndex: 5,
 			want:       0,
 		},
 		{
 			name: "lastWord",
-			timings: []tts.WordTiming{
+			timings: []speech.WordTiming{
 				{Word: "Hello", StartTime: 0, EndTime: 0.5, Speaker: "Alice"},
 				{Word: "world", StartTime: 0.5, EndTime: 1.0, Speaker: "Alice"},
 			},

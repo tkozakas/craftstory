@@ -7,10 +7,10 @@ import (
 	"os"
 
 	"craftstory/internal/dialogue"
-	"craftstory/internal/tts"
-	"craftstory/internal/uploader"
+	"craftstory/internal/distribution"
+	"craftstory/internal/search"
+	"craftstory/internal/speech"
 	"craftstory/internal/video"
-	"craftstory/internal/visuals"
 )
 
 const defaultParallelism = 2
@@ -38,14 +38,14 @@ type generationContext struct {
 	ctx            context.Context
 	pipeline       *Pipeline
 	session        *session
-	voices         []tts.VoiceConfig
-	voiceMap       map[string]tts.VoiceConfig
+	voices         []speech.VoiceConfig
+	voiceMap       map[string]speech.VoiceConfig
 	isConversation bool
 }
 
 type audioResult struct {
 	data     []byte
-	timings  []tts.WordTiming
+	timings  []speech.WordTiming
 	duration float64
 	script   string
 }
@@ -219,7 +219,7 @@ func (generation *generationContext) generateSpeechSegments(parsed *dialogue.Scr
 	type lineJob struct {
 		index int
 		line  dialogue.Line
-		voice tts.VoiceConfig
+		voice speech.VoiceConfig
 	}
 
 	jobs := make([]lineJob, len(parsed.Lines))
@@ -276,7 +276,7 @@ func (generation *generationContext) generateSpeechSegments(parsed *dialogue.Scr
 	return segments, nil
 }
 
-func (generation *generationContext) fetchImages(script string, timings []tts.WordTiming) []video.ImageOverlay {
+func (generation *generationContext) fetchImages(script string, timings []speech.WordTiming) []video.ImageOverlay {
 	fetcher := generation.pipeline.service.Fetcher()
 	if fetcher == nil {
 		slog.Warn("Image fetcher not configured (missing GOOGLE_SEARCH_API_KEY or GOOGLE_SEARCH_ENGINE_ID)")
@@ -300,10 +300,19 @@ func (generation *generationContext) fetchImages(script string, timings []tts.Wo
 		slog.Info("Visual cue", "index", i, "keyword", cue.Keyword, "query", cue.SearchQuery)
 	}
 
+	searchCues := make([]search.VisualCue, len(cues))
+	for i, cue := range cues {
+		searchCues[i] = search.VisualCue{
+			Keyword:     cue.Keyword,
+			SearchQuery: cue.SearchQuery,
+			Type:        cue.Type,
+		}
+	}
+
 	slog.Info("Fetching images from Google...", "timings_count", len(timings))
-	return fetcher.Fetch(generation.ctx, visuals.FetchRequest{
+	return fetcher.Fetch(generation.ctx, search.FetchRequest{
 		Script:   script,
-		Visuals:  cues,
+		Visuals:  searchCues,
 		Timings:  timings,
 		ImageDir: generation.session.dir,
 	})
@@ -328,12 +337,12 @@ func (generation *generationContext) assemble(audio *audioResult, images []video
 	})
 }
 
-func (pipeline *Pipeline) voices() []tts.VoiceConfig {
+func (pipeline *Pipeline) voices() []speech.VoiceConfig {
 	cfg := pipeline.service.Config()
-	var result []tts.VoiceConfig
+	var result []speech.VoiceConfig
 
 	if cfg.ElevenLabs.HostVoice.ID != "" {
-		result = append(result, tts.VoiceConfig{
+		result = append(result, speech.VoiceConfig{
 			ID:            cfg.ElevenLabs.HostVoice.ID,
 			Name:          cfg.ElevenLabs.HostVoice.Name,
 			SubtitleColor: cfg.ElevenLabs.HostVoice.SubtitleColor,
@@ -341,7 +350,7 @@ func (pipeline *Pipeline) voices() []tts.VoiceConfig {
 	}
 
 	if cfg.ElevenLabs.GuestVoice.ID != "" {
-		result = append(result, tts.VoiceConfig{
+		result = append(result, speech.VoiceConfig{
 			ID:            cfg.ElevenLabs.GuestVoice.ID,
 			Name:          cfg.ElevenLabs.GuestVoice.Name,
 			SubtitleColor: cfg.ElevenLabs.GuestVoice.SubtitleColor,
@@ -393,9 +402,9 @@ func (pipeline *Pipeline) fetchRedditTopic(ctx context.Context) (string, error) 
 	return post.Title, nil
 }
 
-func (pipeline *Pipeline) Upload(ctx context.Context, request UploadRequest) (*uploader.UploadResponse, error) {
+func (pipeline *Pipeline) Upload(ctx context.Context, request UploadRequest) (*distribution.UploadResponse, error) {
 	config := pipeline.service.Config()
-	response, err := pipeline.service.Uploader().Upload(ctx, uploader.UploadRequest{
+	response, err := pipeline.service.Uploader().Upload(ctx, distribution.UploadRequest{
 		FilePath:    request.VideoPath,
 		Title:       request.Title,
 		Description: request.Description,

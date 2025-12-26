@@ -1,4 +1,4 @@
-package visuals
+package google
 
 import (
 	"context"
@@ -12,20 +12,26 @@ import (
 )
 
 const (
-	googleSearchURL    = "https://www.googleapis.com/customsearch/v1"
-	searchTimeout      = 15 * time.Second
-	minSearchImgWidth  = 400
-	minSearchImgHeight = 300
+	baseURL        = "https://www.googleapis.com/customsearch/v1"
+	defaultTimeout = 15 * time.Second
+	minImgWidth    = 400
+	minImgHeight   = 300
 )
 
-type SearchClient struct {
+type Client struct {
 	apiKey     string
 	engineID   string
 	httpClient *http.Client
 	baseURL    string
 }
 
-type SearchResult struct {
+type Config struct {
+	APIKey   string
+	EngineID string
+	Timeout  time.Duration
+}
+
+type Result struct {
 	Title    string
 	ImageURL string
 	ThumbURL string
@@ -68,18 +74,23 @@ var blockedDomains = []string{
 	"stock.adobe.com",
 }
 
-func NewSearchClient(apiKey, engineID string) *SearchClient {
-	return &SearchClient{
-		apiKey:   apiKey,
-		engineID: engineID,
+func NewClient(cfg Config) *Client {
+	timeout := cfg.Timeout
+	if timeout == 0 {
+		timeout = defaultTimeout
+	}
+
+	return &Client{
+		apiKey:   cfg.APIKey,
+		engineID: cfg.EngineID,
 		httpClient: &http.Client{
-			Timeout: searchTimeout,
+			Timeout: timeout,
 		},
-		baseURL: googleSearchURL,
+		baseURL: baseURL,
 	}
 }
 
-func (c *SearchClient) Search(ctx context.Context, query string, count int) ([]SearchResult, error) {
+func (c *Client) Search(ctx context.Context, query string, count int) ([]Result, error) {
 	reqURL := c.buildSearchURL(query, count)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
@@ -101,86 +112,7 @@ func (c *SearchClient) Search(ctx context.Context, query string, count int) ([]S
 	return c.parseSearchResponse(resp.Body, count)
 }
 
-func (c *SearchClient) buildSearchURL(query string, count int) string {
-	requestCount := count * 3
-	if requestCount > 10 {
-		requestCount = 10
-	}
-
-	params := url.Values{}
-	params.Set("key", c.apiKey)
-	params.Set("cx", c.engineID)
-	params.Set("q", query)
-	params.Set("searchType", "image")
-	params.Set("num", fmt.Sprintf("%d", requestCount))
-	params.Set("safe", "active")
-	params.Set("imgSize", "xlarge")
-	params.Set("imgType", "photo")
-
-	return fmt.Sprintf("%s?%s", c.baseURL, params.Encode())
-}
-
-func (c *SearchClient) parseSearchResponse(body io.Reader, count int) ([]SearchResult, error) {
-	data, err := io.ReadAll(body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-
-	var searchResp searchResponse
-	if err := json.Unmarshal(data, &searchResp); err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
-	}
-
-	results := filterResults(searchResp.Items, count)
-	if len(results) == 0 {
-		results = filterResultsNoSize(searchResp.Items, count)
-	}
-
-	return results, nil
-}
-
-func filterResults(items []searchItem, count int) []SearchResult {
-	results := make([]SearchResult, 0, count)
-	for _, item := range items {
-		if isBlockedDomain(item.Link) {
-			continue
-		}
-		if item.Image.Width < minSearchImgWidth || item.Image.Height < minSearchImgHeight {
-			continue
-		}
-		results = append(results, toSearchResult(item))
-		if len(results) >= count {
-			break
-		}
-	}
-	return results
-}
-
-func filterResultsNoSize(items []searchItem, count int) []SearchResult {
-	results := make([]SearchResult, 0, count)
-	for _, item := range items {
-		if isBlockedDomain(item.Link) {
-			continue
-		}
-		results = append(results, toSearchResult(item))
-		if len(results) >= count {
-			break
-		}
-	}
-	return results
-}
-
-func toSearchResult(item searchItem) SearchResult {
-	return SearchResult{
-		Title:    item.Title,
-		ImageURL: item.Link,
-		ThumbURL: item.Image.ThumbnailLink,
-		Width:    item.Image.Width,
-		Height:   item.Image.Height,
-	}
-}
-
-func (c *SearchClient) DownloadImage(ctx context.Context, imageURL string) ([]byte, error) {
+func (c *Client) DownloadImage(ctx context.Context, imageURL string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
@@ -208,6 +140,85 @@ func (c *SearchClient) DownloadImage(ctx context.Context, imageURL string) ([]by
 	}
 
 	return data, nil
+}
+
+func (c *Client) buildSearchURL(query string, count int) string {
+	requestCount := count * 3
+	if requestCount > 10 {
+		requestCount = 10
+	}
+
+	params := url.Values{}
+	params.Set("key", c.apiKey)
+	params.Set("cx", c.engineID)
+	params.Set("q", query)
+	params.Set("searchType", "image")
+	params.Set("num", fmt.Sprintf("%d", requestCount))
+	params.Set("safe", "active")
+	params.Set("imgSize", "xlarge")
+	params.Set("imgType", "photo")
+
+	return fmt.Sprintf("%s?%s", c.baseURL, params.Encode())
+}
+
+func (c *Client) parseSearchResponse(body io.Reader, count int) ([]Result, error) {
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	var searchResp searchResponse
+	if err := json.Unmarshal(data, &searchResp); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+
+	results := filterResults(searchResp.Items, count)
+	if len(results) == 0 {
+		results = filterResultsNoSize(searchResp.Items, count)
+	}
+
+	return results, nil
+}
+
+func filterResults(items []searchItem, count int) []Result {
+	results := make([]Result, 0, count)
+	for _, item := range items {
+		if isBlockedDomain(item.Link) {
+			continue
+		}
+		if item.Image.Width < minImgWidth || item.Image.Height < minImgHeight {
+			continue
+		}
+		results = append(results, toResult(item))
+		if len(results) >= count {
+			break
+		}
+	}
+	return results
+}
+
+func filterResultsNoSize(items []searchItem, count int) []Result {
+	results := make([]Result, 0, count)
+	for _, item := range items {
+		if isBlockedDomain(item.Link) {
+			continue
+		}
+		results = append(results, toResult(item))
+		if len(results) >= count {
+			break
+		}
+	}
+	return results
+}
+
+func toResult(item searchItem) Result {
+	return Result{
+		Title:    item.Title,
+		ImageURL: item.Link,
+		ThumbURL: item.Image.ThumbnailLink,
+		Width:    item.Image.Width,
+		Height:   item.Image.Height,
+	}
 }
 
 func isBlockedDomain(imageURL string) bool {

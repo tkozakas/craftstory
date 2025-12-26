@@ -1,4 +1,4 @@
-package llm
+package groq
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/conneroisu/groq-go"
 
+	"craftstory/internal/llm"
 	"craftstory/pkg/prompts"
 )
 
@@ -96,13 +97,13 @@ func makeEmptyChoicesResponse() groqResponse {
 	return resp
 }
 
-func newTestClient(t *testing.T, serverURL string) *GroqClient {
+func newTestClient(t *testing.T, serverURL string) *Client {
 	t.Helper()
 	client, err := groq.NewClient("test-api-key", groq.WithBaseURL(serverURL+"/"))
 	if err != nil {
 		t.Fatalf("failed to create groq client: %v", err)
 	}
-	return &GroqClient{
+	return &Client{
 		client:  client,
 		model:   groq.ChatModel("llama3-8b-8192"),
 		prompts: testPrompts(),
@@ -299,7 +300,7 @@ func TestGenerateVisuals(t *testing.T) {
 		statusCode     int
 		wantErr        bool
 		wantErrContain string
-		wantVisuals    []VisualCue
+		wantVisuals    []llm.VisualCue
 	}{
 		{
 			name:         "successfulVisualsArray",
@@ -307,7 +308,7 @@ func TestGenerateVisuals(t *testing.T) {
 			responseBody: mustJSON(makeGroqResponse(`[{"keyword": "ocean", "search_query": "vast ocean waves"}]`)),
 			statusCode:   http.StatusOK,
 			wantErr:      false,
-			wantVisuals: []VisualCue{
+			wantVisuals: []llm.VisualCue{
 				{Keyword: "ocean", SearchQuery: "vast ocean waves"},
 			},
 		},
@@ -317,7 +318,7 @@ func TestGenerateVisuals(t *testing.T) {
 			responseBody: mustJSON(makeGroqResponse(`{"visuals": [{"keyword": "mountains", "search_query": "tall mountain peaks"}]}`)),
 			statusCode:   http.StatusOK,
 			wantErr:      false,
-			wantVisuals: []VisualCue{
+			wantVisuals: []llm.VisualCue{
 				{Keyword: "mountains", SearchQuery: "tall mountain peaks"},
 			},
 		},
@@ -330,7 +331,7 @@ func TestGenerateVisuals(t *testing.T) {
 			]`)),
 			statusCode: http.StatusOK,
 			wantErr:    false,
-			wantVisuals: []VisualCue{
+			wantVisuals: []llm.VisualCue{
 				{Keyword: "forest", SearchQuery: "dense green forest"},
 				{Keyword: "animals", SearchQuery: "forest wildlife animals"},
 			},

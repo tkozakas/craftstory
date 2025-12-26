@@ -1,4 +1,4 @@
-package tts
+package speech
 
 import (
 	"testing"
@@ -56,7 +56,7 @@ func TestEstimateTimingsFromDuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			timings := estimateTimingsFromDuration(tt.text, tt.duration)
+			timings := EstimateTimingsFromDuration(tt.text, tt.duration)
 
 			if len(timings) != tt.wantCount {
 				t.Fatalf("got %d timings, want %d", len(timings), tt.wantCount)
@@ -88,7 +88,7 @@ func TestEstimateTimingsFromDuration(t *testing.T) {
 
 func TestEstimateTimingsNoOverlap(t *testing.T) {
 	text := "The quick brown fox jumps over"
-	timings := estimateTimingsFromDuration(text, 6.0)
+	timings := EstimateTimingsFromDuration(text, 6.0)
 
 	for i := 1; i < len(timings); i++ {
 		if timings[i].StartTime < timings[i-1].EndTime {
@@ -100,7 +100,7 @@ func TestEstimateTimingsNoOverlap(t *testing.T) {
 
 func TestEstimateTimingsContiguous(t *testing.T) {
 	text := "Hello world test"
-	timings := estimateTimingsFromDuration(text, 3.0)
+	timings := EstimateTimingsFromDuration(text, 3.0)
 
 	const epsilon = 0.001
 
@@ -114,7 +114,7 @@ func TestEstimateTimingsContiguous(t *testing.T) {
 
 func TestEstimateTimingsWordLengthInfluence(t *testing.T) {
 	text := "I extraordinary"
-	timings := estimateTimingsFromDuration(text, 2.0)
+	timings := EstimateTimingsFromDuration(text, 2.0)
 
 	if len(timings) != 2 {
 		t.Fatalf("got %d timings, want 2", len(timings))
@@ -159,7 +159,7 @@ func TestEstimateAudioDuration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			audio := make([]byte, tt.audioBytes)
-			duration := estimateAudioDuration(audio)
+			duration := EstimateAudioDuration(audio)
 
 			if duration < tt.wantMin || duration > tt.wantMax {
 				t.Errorf("duration = %v, want between %v and %v",
@@ -173,7 +173,7 @@ func TestEstimateTimings(t *testing.T) {
 	text := "Hello world"
 	audio := make([]byte, 32000)
 
-	timings := estimateTimings(text, audio)
+	timings := EstimateTimings(text, audio)
 
 	if len(timings) != 2 {
 		t.Fatalf("got %d timings, want 2", len(timings))
@@ -205,9 +205,9 @@ func TestAddPauses(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := addPauses(tt.input)
+			got := AddPauses(tt.input)
 			if got != tt.want {
-				t.Errorf("addPauses(%q) = %q, want %q", tt.input, got, tt.want)
+				t.Errorf("AddPauses(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -284,12 +284,12 @@ func TestTimingSyncAcrossConversation(t *testing.T) {
 
 	var combined []WordTiming
 	combined = append(combined, adamTimings...)
-	for _, t := range bellaTimings {
+	for _, timing := range bellaTimings {
 		combined = append(combined, WordTiming{
-			Word:      t.Word,
-			StartTime: t.StartTime + offset,
-			EndTime:   t.EndTime + offset,
-			Speaker:   t.Speaker,
+			Word:      timing.Word,
+			StartTime: timing.StartTime + offset,
+			EndTime:   timing.EndTime + offset,
+			Speaker:   timing.Speaker,
 		})
 	}
 

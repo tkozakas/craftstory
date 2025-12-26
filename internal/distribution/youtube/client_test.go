@@ -1,4 +1,4 @@
-package uploader
+package youtube
 
 import (
 	"context"
@@ -9,13 +9,15 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
+
+	"craftstory/internal/distribution"
 )
 
-func TestNewYouTubeAuth(t *testing.T) {
-	auth := NewYouTubeAuth("client-id", "client-secret", "/tmp/token.json")
+func TestNewAuth(t *testing.T) {
+	auth := NewAuth("client-id", "client-secret", "/tmp/token.json")
 
 	if auth == nil {
-		t.Fatal("NewYouTubeAuth() returned nil")
+		t.Fatal("NewAuth() returned nil")
 	}
 	if auth.config.ClientID != "client-id" {
 		t.Errorf("ClientID = %q, want %q", auth.config.ClientID, "client-id")
@@ -28,36 +30,36 @@ func TestNewYouTubeAuth(t *testing.T) {
 	}
 }
 
-func TestNewYouTubeUploader(t *testing.T) {
-	auth := NewYouTubeAuth("id", "secret", "/tmp/token.json")
-	uploader := NewYouTubeUploader(auth)
+func TestNewClient(t *testing.T) {
+	auth := NewAuth("id", "secret", "/tmp/token.json")
+	client := NewClient(auth)
 
-	if uploader == nil {
-		t.Fatal("NewYouTubeUploader() returned nil")
+	if client == nil {
+		t.Fatal("NewClient() returned nil")
 	}
-	if uploader.auth != auth {
-		t.Error("NewYouTubeUploader() did not set auth correctly")
-	}
-}
-
-func TestYouTubePlatform(t *testing.T) {
-	uploader := NewYouTubeUploader(nil)
-	if got := uploader.Platform(); got != youtubePlatform {
-		t.Errorf("Platform() = %q, want %q", got, youtubePlatform)
+	if client.auth != auth {
+		t.Error("NewClient() did not set auth correctly")
 	}
 }
 
-func TestYouTubeUploaderAuth(t *testing.T) {
-	auth := NewYouTubeAuth("id", "secret", "/tmp/token.json")
-	uploader := NewYouTubeUploader(auth)
+func TestPlatform(t *testing.T) {
+	client := NewClient(nil)
+	if got := client.Platform(); got != platform {
+		t.Errorf("Platform() = %q, want %q", got, platform)
+	}
+}
 
-	if uploader.Auth() != auth {
+func TestClientAuth(t *testing.T) {
+	auth := NewAuth("id", "secret", "/tmp/token.json")
+	client := NewClient(auth)
+
+	if client.Auth() != auth {
 		t.Error("Auth() did not return the correct auth")
 	}
 }
 
-func TestYouTubeAuthGetAuthURL(t *testing.T) {
-	auth := NewYouTubeAuth("client-id", "client-secret", "/tmp/token.json")
+func TestAuthGetAuthURL(t *testing.T) {
+	auth := NewAuth("client-id", "client-secret", "/tmp/token.json")
 	url := auth.GetAuthURL()
 
 	if url == "" {
@@ -68,7 +70,7 @@ func TestYouTubeAuthGetAuthURL(t *testing.T) {
 	}
 }
 
-func TestYouTubeAuthLoadToken(t *testing.T) {
+func TestAuthLoadToken(t *testing.T) {
 	tests := []struct {
 		name      string
 		token     *oauth2.Token
@@ -112,7 +114,7 @@ func TestYouTubeAuthLoadToken(t *testing.T) {
 				tt.setupFunc(t, tokenPath)
 			}
 
-			auth := NewYouTubeAuth("id", "secret", tokenPath)
+			auth := NewAuth("id", "secret", tokenPath)
 			err := auth.LoadToken()
 
 			if (err != nil) != tt.wantErr {
@@ -127,7 +129,7 @@ func TestYouTubeAuthLoadToken(t *testing.T) {
 	}
 }
 
-func TestYouTubeAuthSaveToken(t *testing.T) {
+func TestAuthSaveToken(t *testing.T) {
 	tests := []struct {
 		name    string
 		token   *oauth2.Token
@@ -150,7 +152,7 @@ func TestYouTubeAuthSaveToken(t *testing.T) {
 			tmpDir := t.TempDir()
 			tokenPath := filepath.Join(tmpDir, "token.json")
 
-			auth := NewYouTubeAuth("id", "secret", tokenPath)
+			auth := NewAuth("id", "secret", tokenPath)
 			auth.token = tt.token
 
 			err := auth.SaveToken()
@@ -179,8 +181,8 @@ func TestYouTubeAuthSaveToken(t *testing.T) {
 	}
 }
 
-func TestYouTubeAuthSaveTokenInvalidPath(t *testing.T) {
-	auth := NewYouTubeAuth("id", "secret", "/nonexistent/dir/token.json")
+func TestAuthSaveTokenInvalidPath(t *testing.T) {
+	auth := NewAuth("id", "secret", "/nonexistent/dir/token.json")
 	auth.token = &oauth2.Token{AccessToken: "test"}
 
 	err := auth.SaveToken()
@@ -189,21 +191,21 @@ func TestYouTubeAuthSaveTokenInvalidPath(t *testing.T) {
 	}
 }
 
-func TestYouTubeAuthIsAuthenticated(t *testing.T) {
+func TestAuthIsAuthenticated(t *testing.T) {
 	tests := []struct {
 		name      string
-		setupFunc func(t *testing.T, auth *YouTubeAuth)
+		setupFunc func(t *testing.T, auth *Auth)
 		want      bool
 	}{
 		{
 			name: "noToken",
-			setupFunc: func(t *testing.T, auth *YouTubeAuth) {
+			setupFunc: func(t *testing.T, auth *Auth) {
 			},
 			want: false,
 		},
 		{
 			name: "validToken",
-			setupFunc: func(t *testing.T, auth *YouTubeAuth) {
+			setupFunc: func(t *testing.T, auth *Auth) {
 				auth.token = &oauth2.Token{
 					AccessToken: "valid-token",
 					Expiry:      time.Now().Add(time.Hour),
@@ -213,7 +215,7 @@ func TestYouTubeAuthIsAuthenticated(t *testing.T) {
 		},
 		{
 			name: "expiredToken",
-			setupFunc: func(t *testing.T, auth *YouTubeAuth) {
+			setupFunc: func(t *testing.T, auth *Auth) {
 				auth.token = &oauth2.Token{
 					AccessToken: "expired-token",
 					Expiry:      time.Now().Add(-time.Hour),
@@ -228,7 +230,7 @@ func TestYouTubeAuthIsAuthenticated(t *testing.T) {
 			tmpDir := t.TempDir()
 			tokenPath := filepath.Join(tmpDir, "token.json")
 
-			auth := NewYouTubeAuth("id", "secret", tokenPath)
+			auth := NewAuth("id", "secret", tokenPath)
 			tt.setupFunc(t, auth)
 
 			got := auth.IsAuthenticated()
@@ -239,15 +241,15 @@ func TestYouTubeAuthIsAuthenticated(t *testing.T) {
 	}
 }
 
-func TestYouTubeAuthClient(t *testing.T) {
+func TestAuthClient(t *testing.T) {
 	tests := []struct {
 		name      string
-		setupFunc func(t *testing.T, auth *YouTubeAuth, path string)
+		setupFunc func(t *testing.T, auth *Auth, path string)
 		wantErr   bool
 	}{
 		{
 			name: "withExistingToken",
-			setupFunc: func(t *testing.T, auth *YouTubeAuth, path string) {
+			setupFunc: func(t *testing.T, auth *Auth, path string) {
 				auth.token = &oauth2.Token{
 					AccessToken: "test-token",
 					Expiry:      time.Now().Add(time.Hour),
@@ -257,7 +259,7 @@ func TestYouTubeAuthClient(t *testing.T) {
 		},
 		{
 			name: "loadTokenFromFile",
-			setupFunc: func(t *testing.T, auth *YouTubeAuth, path string) {
+			setupFunc: func(t *testing.T, auth *Auth, path string) {
 				token := &oauth2.Token{
 					AccessToken: "file-token",
 					Expiry:      time.Now().Add(time.Hour),
@@ -269,7 +271,7 @@ func TestYouTubeAuthClient(t *testing.T) {
 		},
 		{
 			name: "noTokenAvailable",
-			setupFunc: func(t *testing.T, auth *YouTubeAuth, path string) {
+			setupFunc: func(t *testing.T, auth *Auth, path string) {
 			},
 			wantErr: true,
 		},
@@ -280,7 +282,7 @@ func TestYouTubeAuthClient(t *testing.T) {
 			tmpDir := t.TempDir()
 			tokenPath := filepath.Join(tmpDir, "token.json")
 
-			auth := NewYouTubeAuth("id", "secret", tokenPath)
+			auth := NewAuth("id", "secret", tokenPath)
 			tt.setupFunc(t, auth, tokenPath)
 
 			ctx := context.Background()
@@ -298,15 +300,15 @@ func TestYouTubeAuthClient(t *testing.T) {
 	}
 }
 
-func TestYouTubeUploaderUploadNoAuth(t *testing.T) {
+func TestClientUploadNoAuth(t *testing.T) {
 	tmpDir := t.TempDir()
 	tokenPath := filepath.Join(tmpDir, "token.json")
 
-	auth := NewYouTubeAuth("id", "secret", tokenPath)
-	uploader := NewYouTubeUploader(auth)
+	auth := NewAuth("id", "secret", tokenPath)
+	client := NewClient(auth)
 
 	ctx := context.Background()
-	_, err := uploader.Upload(ctx, UploadRequest{
+	_, err := client.Upload(ctx, distribution.UploadRequest{
 		FilePath: "/tmp/test.mp4",
 		Title:    "Test",
 	})
@@ -316,7 +318,7 @@ func TestYouTubeUploaderUploadNoAuth(t *testing.T) {
 	}
 }
 
-func TestYouTubeUploaderUploadBadFile(t *testing.T) {
+func TestClientUploadBadFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	tokenPath := filepath.Join(tmpDir, "token.json")
 
@@ -327,11 +329,11 @@ func TestYouTubeUploaderUploadBadFile(t *testing.T) {
 	tokenData, _ := json.Marshal(token)
 	_ = os.WriteFile(tokenPath, tokenData, 0600)
 
-	auth := NewYouTubeAuth("id", "secret", tokenPath)
-	uploader := NewYouTubeUploader(auth)
+	auth := NewAuth("id", "secret", tokenPath)
+	client := NewClient(auth)
 
 	ctx := context.Background()
-	_, err := uploader.Upload(ctx, UploadRequest{
+	_, err := client.Upload(ctx, distribution.UploadRequest{
 		FilePath: "/nonexistent/video.mp4",
 		Title:    "Test",
 	})
@@ -341,15 +343,15 @@ func TestYouTubeUploaderUploadBadFile(t *testing.T) {
 	}
 }
 
-func TestYouTubeUploaderSetPrivacyNoAuth(t *testing.T) {
+func TestClientSetPrivacyNoAuth(t *testing.T) {
 	tmpDir := t.TempDir()
 	tokenPath := filepath.Join(tmpDir, "token.json")
 
-	auth := NewYouTubeAuth("id", "secret", tokenPath)
-	uploader := NewYouTubeUploader(auth)
+	auth := NewAuth("id", "secret", tokenPath)
+	client := NewClient(auth)
 
 	ctx := context.Background()
-	err := uploader.SetPrivacy(ctx, "video-id", "public")
+	err := client.SetPrivacy(ctx, "video-id", "public")
 
 	if err == nil {
 		t.Error("SetPrivacy() should fail without auth")

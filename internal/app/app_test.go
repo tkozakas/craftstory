@@ -5,17 +5,17 @@ import (
 	"errors"
 	"testing"
 
-	"craftstory/internal/tts"
-	"craftstory/internal/uploader"
+	"craftstory/internal/distribution"
+	"craftstory/internal/speech"
 	"craftstory/pkg/config"
 )
 
 type mockUploader struct {
-	response *uploader.UploadResponse
+	response *distribution.UploadResponse
 	err      error
 }
 
-func (m *mockUploader) Upload(_ context.Context, _ uploader.UploadRequest) (*uploader.UploadResponse, error) {
+func (m *mockUploader) Upload(_ context.Context, _ distribution.UploadRequest) (*distribution.UploadResponse, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -73,12 +73,12 @@ func TestNewPipeline(t *testing.T) {
 func TestAudioDuration(t *testing.T) {
 	tests := []struct {
 		name    string
-		timings []tts.WordTiming
+		timings []speech.WordTiming
 		want    float64
 	}{
 		{
 			name:    "emptyTimings",
-			timings: []tts.WordTiming{},
+			timings: []speech.WordTiming{},
 			want:    0,
 		},
 		{
@@ -88,14 +88,14 @@ func TestAudioDuration(t *testing.T) {
 		},
 		{
 			name: "singleWord",
-			timings: []tts.WordTiming{
+			timings: []speech.WordTiming{
 				{Word: "Hello", StartTime: 0, EndTime: 0.5},
 			},
 			want: 0.5,
 		},
 		{
 			name: "multipleWords",
-			timings: []tts.WordTiming{
+			timings: []speech.WordTiming{
 				{Word: "Hello", StartTime: 0, EndTime: 0.5},
 				{Word: "World", StartTime: 0.5, EndTime: 1.0},
 				{Word: "Test", StartTime: 1.0, EndTime: 1.5},
@@ -118,7 +118,7 @@ func TestPipelineUpload(t *testing.T) {
 	tests := []struct {
 		name       string
 		req        UploadRequest
-		uploadResp *uploader.UploadResponse
+		uploadResp *distribution.UploadResponse
 		uploadErr  error
 		wantErr    bool
 	}{
@@ -129,7 +129,7 @@ func TestPipelineUpload(t *testing.T) {
 				Title:       "Test Title",
 				Description: "Test Description",
 			},
-			uploadResp: &uploader.UploadResponse{
+			uploadResp: &distribution.UploadResponse{
 				ID:       "abc123",
 				URL:      "https://youtube.com/watch?v=abc123",
 				Platform: "youtube",
@@ -382,7 +382,7 @@ func TestFindKeywordIndex(t *testing.T) {
 }
 
 func TestBuildVoiceMap(t *testing.T) {
-	voices := []tts.VoiceConfig{
+	voices := []speech.VoiceConfig{
 		{ID: "1", Name: "Alice"},
 		{ID: "2", Name: "Bob"},
 	}
@@ -469,7 +469,7 @@ func TestMaxDurationZeroAllowsAnyDuration(t *testing.T) {
 			MaxDuration: 0,
 		},
 	}
-	duration := audioDuration([]tts.WordTiming{
+	duration := audioDuration([]speech.WordTiming{
 		{Word: "test", StartTime: 0, EndTime: 120.0},
 	})
 	maxDuration := cfg.Video.MaxDuration
