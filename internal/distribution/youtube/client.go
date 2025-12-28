@@ -24,6 +24,8 @@ const (
 	platform   = "youtube"
 )
 
+var _ distribution.Uploader = (*Client)(nil)
+
 type Client struct {
 	auth *Auth
 }
@@ -272,5 +274,3 @@ func (a *Auth) IsAuthenticated() bool {
 	}
 	return a.token != nil && a.token.Valid()
 }
-
-var _ distribution.Uploader = (*Client)(nil)

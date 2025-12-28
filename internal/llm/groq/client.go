@@ -13,6 +13,8 @@ import (
 	"craftstory/pkg/prompts"
 )
 
+var _ llm.Client = (*Client)(nil)
+
 type Client struct {
 	client  *groq.Client
 	model   groq.ChatModel
@@ -72,7 +74,7 @@ func (c *Client) GenerateVisuals(ctx context.Context, script string, count int) 
 
 	var visuals []llm.VisualCue
 	if err := json.Unmarshal([]byte(content), &visuals); err == nil && len(visuals) > 0 {
-		return visuals, nil
+		return deduplicateVisuals(visuals), nil
 	}
 
 	var wrapped map[string][]llm.VisualCue
@@ -82,17 +84,34 @@ func (c *Client) GenerateVisuals(ctx context.Context, script string, count int) 
 
 	for _, key := range []string{"visuals", "visual_cues", "keywords", "images", "results"} {
 		if cues, ok := wrapped[key]; ok && len(cues) > 0 {
-			return cues, nil
+			return deduplicateVisuals(cues), nil
 		}
 	}
 
 	for _, cues := range wrapped {
 		if len(cues) > 0 {
-			return cues, nil
+			return deduplicateVisuals(cues), nil
 		}
 	}
 
 	return nil, fmt.Errorf("no visual cues found in response")
+}
+
+func deduplicateVisuals(visuals []llm.VisualCue) []llm.VisualCue {
+	seen := make(map[string]bool)
+	result := make([]llm.VisualCue, 0, len(visuals))
+
+	for _, v := range visuals {
+		key := strings.ToLower(v.Keyword)
+		if seen[key] {
+			slog.Debug("Skipping duplicate keyword", "keyword", v.Keyword)
+			continue
+		}
+		seen[key] = true
+		result = append(result, v)
+	}
+
+	return result
 }
 
 func (c *Client) GenerateTitle(ctx context.Context, script string) (string, error) {
@@ -153,5 +172,3 @@ func (c *Client) generateJSONContent(ctx context.Context, systemPrompt, userProm
 
 	return content, nil
 }
-
-var _ llm.Client = (*Client)(nil)

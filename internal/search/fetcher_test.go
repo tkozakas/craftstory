@@ -98,34 +98,39 @@ func TestFindKeywordInTimings(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
-		timings []speech.WordTiming
-		keyword string
-		want    int
+		name      string
+		timings   []speech.WordTiming
+		keyword   string
+		startFrom int
+		want      int
 	}{
 		{
-			name:    "simpleMatch",
-			timings: timings,
-			keyword: "fox",
-			want:    3,
+			name:      "simpleMatch",
+			timings:   timings,
+			keyword:   "fox",
+			startFrom: 0,
+			want:      3,
 		},
 		{
-			name:    "firstWord",
-			timings: timings,
-			keyword: "the",
-			want:    0,
+			name:      "firstWord",
+			timings:   timings,
+			keyword:   "the",
+			startFrom: 0,
+			want:      0,
 		},
 		{
-			name:    "lastWord",
-			timings: timings,
-			keyword: "jumps",
-			want:    4,
+			name:      "lastWord",
+			timings:   timings,
+			keyword:   "jumps",
+			startFrom: 0,
+			want:      4,
 		},
 		{
-			name:    "caseInsensitive",
-			timings: timings,
-			keyword: "QUICK",
-			want:    1,
+			name:      "caseInsensitive",
+			timings:   timings,
+			keyword:   "QUICK",
+			startFrom: 0,
+			want:      1,
 		},
 		{
 			name: "withPunctuation",
@@ -134,20 +139,23 @@ func TestFindKeywordInTimings(t *testing.T) {
 				{Word: "a", StartTime: 0.3, EndTime: 0.4},
 				{Word: "cat!", StartTime: 0.4, EndTime: 0.7},
 			},
-			keyword: "cat",
-			want:    2,
+			keyword:   "cat",
+			startFrom: 0,
+			want:      2,
 		},
 		{
-			name:    "notFound",
-			timings: timings,
-			keyword: "elephant",
-			want:    -1,
+			name:      "notFound",
+			timings:   timings,
+			keyword:   "elephant",
+			startFrom: 0,
+			want:      -1,
 		},
 		{
-			name:    "emptyKeyword",
-			timings: timings,
-			keyword: "",
-			want:    -1,
+			name:      "emptyKeyword",
+			timings:   timings,
+			keyword:   "",
+			startFrom: 0,
+			want:      -1,
 		},
 		{
 			name: "multiWordKeyword",
@@ -157,22 +165,44 @@ func TestFindKeywordInTimings(t *testing.T) {
 				{Word: "ringed", StartTime: 0.4, EndTime: 0.6},
 				{Word: "octopus", StartTime: 0.6, EndTime: 0.9},
 			},
-			keyword: "blue ringed",
-			want:    1,
+			keyword:   "blue ringed",
+			startFrom: 0,
+			want:      1,
 		},
 		{
-			name:    "partialMatch",
-			timings: []speech.WordTiming{{Word: "octopuses", StartTime: 0, EndTime: 0.5}},
-			keyword: "octopus",
-			want:    0,
+			name:      "partialMatch",
+			timings:   []speech.WordTiming{{Word: "octopuses", StartTime: 0, EndTime: 0.5}},
+			keyword:   "octopus",
+			startFrom: 0,
+			want:      0,
+		},
+		{
+			name:      "startFromMiddle",
+			timings:   timings,
+			keyword:   "the",
+			startFrom: 1,
+			want:      -1,
+		},
+		{
+			name: "findSecondOccurrence",
+			timings: []speech.WordTiming{
+				{Word: "the", StartTime: 0, EndTime: 0.2},
+				{Word: "fox", StartTime: 0.2, EndTime: 0.5},
+				{Word: "and", StartTime: 0.5, EndTime: 0.7},
+				{Word: "the", StartTime: 0.7, EndTime: 0.9},
+				{Word: "dog", StartTime: 0.9, EndTime: 1.2},
+			},
+			keyword:   "the",
+			startFrom: 1,
+			want:      3,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := findKeywordInTimings(tt.timings, tt.keyword)
+			got := findKeywordInTimings(tt.timings, tt.keyword, tt.startFrom)
 			if got != tt.want {
-				t.Errorf("findKeywordInTimings(%q) = %d, want %d", tt.keyword, got, tt.want)
+				t.Errorf("findKeywordInTimings(%q, startFrom=%d) = %d, want %d", tt.keyword, tt.startFrom, got, tt.want)
 			}
 		})
 	}
@@ -201,6 +231,49 @@ func TestCleanWord(t *testing.T) {
 	}
 }
 
+func TestDetectImageFormat(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		want string
+	}{
+		{
+			name: "tooSmall",
+			data: []byte{0x89, 0x50, 0x4E, 0x47},
+			want: "",
+		},
+		{
+			name: "jpeg",
+			data: append([]byte{0xFF, 0xD8, 0xFF}, make([]byte, 20)...),
+			want: ".jpg",
+		},
+		{
+			name: "png",
+			data: append([]byte{0x89, 0x50, 0x4E, 0x47}, make([]byte, 20)...),
+			want: ".png",
+		},
+		{
+			name: "webp",
+			data: []byte{'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'E', 'B', 'P', 0, 0, 0, 0},
+			want: ".webp",
+		},
+		{
+			name: "unknown",
+			data: make([]byte, 20),
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := detectImageFormat(tt.data)
+			if got != tt.want {
+				t.Errorf("detectImageFormat() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsValidImage(t *testing.T) {
 	tests := []struct {
 		name string
@@ -220,6 +293,11 @@ func TestIsValidImage(t *testing.T) {
 		{
 			name: "validPNG",
 			data: append([]byte{0x89, 0x50, 0x4E, 0x47}, make([]byte, 100)...),
+			want: true,
+		},
+		{
+			name: "validWebP",
+			data: append([]byte{'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'E', 'B', 'P'}, make([]byte, 100)...),
 			want: true,
 		},
 		{

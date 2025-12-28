@@ -103,6 +103,7 @@ type VisualsConfig struct {
 	ImageHeight    int     `yaml:"image_height"`
 	MinGap         float64 `yaml:"min_gap"`
 	Count          int     `yaml:"count"`
+	GIFEnabled     bool    `yaml:"gif_enabled"`
 }
 
 type RedditConfig struct {

@@ -45,6 +45,12 @@ func BuildService(cfg *config.Config, verbose bool) (*BuildResult, error) {
 			Stability:  cfg.ElevenLabs.Stability,
 			Similarity: cfg.ElevenLabs.Similarity,
 		})
+	} else {
+		wordsPerMinute := speech.DefaultWordsPerMinute * cfg.ElevenLabs.Speed
+		if wordsPerMinute <= 0 {
+			wordsPerMinute = speech.DefaultWordsPerMinute
+		}
+		ttsProvider = speech.NewStubProvider(wordsPerMinute)
 	}
 
 	localStorage := storage.NewLocalStorage(cfg.Video.BackgroundDir, cfg.Video.OutputDir)
@@ -91,7 +97,7 @@ func BuildService(cfg *config.Config, verbose bool) (*BuildResult, error) {
 	}
 
 	var gifSearch *tenor.Client
-	if cfg.TenorAPIKey != "" {
+	if cfg.TenorAPIKey != "" && cfg.Visuals.GIFEnabled {
 		gifSearch = tenor.NewClient(tenor.Config{APIKey: cfg.TenorAPIKey})
 	}
 

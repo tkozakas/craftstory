@@ -44,7 +44,11 @@ type ServiceOptions struct {
 func NewService(opts ServiceOptions) *Service {
 	var fetcher *search.Fetcher
 	if opts.ImageSearch != nil || opts.GIFSearch != nil {
-		fetcher = search.NewFetcher(opts.ImageSearch, opts.GIFSearch, search.FetcherConfig{
+		var gifSearcher search.GIFSearcher
+		if opts.GIFSearch != nil {
+			gifSearcher = opts.GIFSearch
+		}
+		fetcher = search.NewFetcher(opts.ImageSearch, gifSearcher, search.FetcherConfig{
 			MaxDisplayTime: opts.Config.Visuals.MaxDisplayTime,
 			ImageWidth:     opts.Config.Visuals.ImageWidth,
 			ImageHeight:    opts.Config.Visuals.ImageHeight,
@@ -65,46 +69,6 @@ func NewService(opts ServiceOptions) *Service {
 		fetcher:     fetcher,
 		approval:    opts.Approval,
 	}
-}
-
-func (s *Service) Config() *config.Config {
-	return s.cfg
-}
-
-func (s *Service) LLM() llm.Client {
-	return s.llm
-}
-
-func (s *Service) TTS() speech.Provider {
-	return s.tts
-}
-
-func (s *Service) Uploader() distribution.Uploader {
-	return s.uploader
-}
-
-func (s *Service) Assembler() *video.Assembler {
-	return s.assembler
-}
-
-func (s *Service) Storage() *storage.LocalStorage {
-	return s.storage
-}
-
-func (s *Service) Reddit() *reddit.Client {
-	return s.reddit
-}
-
-func (s *Service) ImageSearch() *google.Client {
-	return s.imageSearch
-}
-
-func (s *Service) GIFSearch() *tenor.Client {
-	return s.gifSearch
-}
-
-func (s *Service) Fetcher() *search.Fetcher {
-	return s.fetcher
 }
 
 func (s *Service) Approval() *telegram.ApprovalService {

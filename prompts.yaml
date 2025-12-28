@@ -17,7 +17,7 @@ system:
     
     Use natural speech: 'wait,' 'actually,' 'no way,' 'here's the crazy part.'
     Output ONLY dialogue lines in 'Speaker: text' format.
-  visuals: "You extract visual keywords from scripts. Keywords must be EXACT words from the script. Return valid JSON only."
+  visuals: "Extract visual keywords from scripts. Return UNIQUE keywords in ORDER OF APPEARANCE. Focus on topic-specific words. No duplicates. Return valid JSON only."
   title: "You are a CTR expert. You generate titles that use curiosity gaps. Max 60 characters. Make it feel like gossip or a secret."
 
 script:
@@ -105,47 +105,50 @@ script:
     - Everything should sound completely real and factual
 
   visuals: |
-    Extract visual keywords from this script. Add an image or meme whenever there's a visual opportunity.
-    
-    ADD VISUALS FOR:
-    - Every brand/company mentioned (Microsoft, Google, Apple, Netflix, etc.)
-    - Every money reference (million, billion, dollars, salary, etc.)
-    - Every person/role (CEO, engineer, founder, intern, etc.)
-    - Every concrete object (computer, phone, office, car, etc.)
-    - Every action that can be visualized (fired, launched, crashed, etc.)
-    - Every reaction or emotion (shocked, confused, excited, etc.) - USE MEMES FOR THESE
-    
-    TYPE SELECTION:
-    - Use "image" for: brands, logos, objects, places, people
-    - Use "gif" for: reactions, emotions, funny moments, dramatic reveals, memes
-    
-    WHEN TO USE GIFS/MEMES:
-    - Reactions: "wait what", "no way", "seriously", "mind blown"
-    - Emotions: shocked, confused, laughing, crying, excited
-    - Drama: "plot twist", "here's the crazy part", "you won't believe"
-    - Humor: any joke or punchline moment
-    
-    SEARCH QUERY STYLE:
-    - Brands: "[Brand] logo dark background"
-    - Money: "money cash pile cinematic"
-    - Memes/Reactions: "[reaction] meme gif" or "[emotion] reaction gif"
-    - People: "business [role] silhouette"
+    Extract keywords from script to show relevant images/gifs AT THE RIGHT MOMENT.
     
     RULES:
-    - Keyword must be EXACTLY as it appears in script
-    - More visuals = better engagement (aim for one every 5-8 seconds)
-    - Use GIFs for at least 30% of visuals to keep it engaging
-    - NEVER use abstract words without meme context
+    1. Each keyword must be a SINGLE WORD that exists EXACTLY in the script
+    2. Keywords must be in ORDER OF APPEARANCE (first to last)
+    3. NO DUPLICATE keywords - each word can only be used once
+    4. Focus on TOPIC-RELEVANT words - images should match what's being discussed
+    
+    PRIORITY (highest to lowest):
+    1. Topic-specific terms (the main subject being discussed)
+    2. Brand/company names: Google, Microsoft, Apple, Netflix, Amazon
+    3. Technical terms: memory, database, server, code, software, garbage
+    4. Money words: million, billion, dollars, money
+    5. People words: CEO, engineer, founder, developer
+    6. Reaction words (ONLY 1-2 per video): wait, seriously, crazy
+    
+    SEARCH QUERY FORMAT - KEEP IT CONTEXTUAL:
+    Most images should be relevant to the topic, not memes:
+    - Technical: "garbage" -> "garbage collector programming diagram"
+    - Brands: "Google" -> "Google logo"
+    - Money: "million" -> "million dollars cash pile"
+    - People: "engineer" -> "software engineer working"
+    - Concepts: "memory" -> "computer RAM memory"
+    - Actions: "fired" -> "person fired from job"
+    - Failures: "crashed" -> "computer crash error screen"
+    
+    BRAINROT STYLE - USE SPARINGLY (only 1-2 times per video):
+    For reaction words ONLY, you can use meme style:
+    - "wait" -> "wait what meme" (type: gif)
+    - "crazy" -> "crazy reaction meme" (type: gif)
+    - "seriously" -> "seriously meme reaction" (type: gif)
+    
+    TYPE:
+    - "image" = most content (logos, diagrams, objects, people, concepts)
+    - "gif" = ONLY for 1-2 reaction moments per video
     
     Script:
     {{.Script}}
     
-    Return JSON array:
+    Return exactly {{.Count}} UNIQUE keywords as JSON, IN SCRIPT ORDER:
     {"visuals": [
-      {"keyword": "Microsoft", "search_query": "Microsoft logo dark background", "type": "image"},
-      {"keyword": "wait", "search_query": "wait what meme reaction gif", "type": "gif"},
-      {"keyword": "billion", "search_query": "billion dollars cash pile", "type": "image"},
-      {"keyword": "fired", "search_query": "fired reaction meme gif", "type": "gif"}
+      {"keyword": "Google", "search_query": "Google logo", "type": "image"},
+      {"keyword": "memory", "search_query": "computer RAM memory", "type": "image"},
+      {"keyword": "wait", "search_query": "wait what meme", "type": "gif"}
     ]}
 
 title:

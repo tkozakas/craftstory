@@ -2,7 +2,7 @@ groq:
   model: "llama-3.3-70b-versatile"
 
 elevenlabs:
-  enabled: true
+  enabled: false
   speed: 0.90
   stability: 0.5
   similarity: 0.75
@@ -25,6 +25,7 @@ visuals:
   image_width: 800
   image_height: 600
   count: 8
+  gif_enabled: false
 
 video:
   background_dir: "./assets/backgrounds"

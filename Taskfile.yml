@@ -8,15 +8,15 @@ tasks:
   setup:
     desc: Interactive setup - installs tools and prompts for API keys
     cmds:
-      - go run ./cmd/setup
+      - go run . setup
 
   run:
     cmds:
-      - go run ./cmd/craftstory {{.CLI_ARGS}}
+      - go run . {{.CLI_ARGS}}
 
   build:
     cmds:
-      - go build -o bin/craftstory ./cmd/craftstory
+      - go build -o bin/craftstory .
 
   test:
     cmds:

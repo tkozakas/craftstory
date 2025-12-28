@@ -81,6 +81,12 @@ func (pipeline *Pipeline) Generate(ctx context.Context, topic string) (*Generate
 	slog.Info("Fetching images...")
 	images := generation.fetchImages(script, audio.timings)
 
+	slog.Info("=== Images to overlay ===", "count", len(images))
+	for i, img := range images {
+		slog.Info("Image overlay", "index", i, "path", img.ImagePath, "start", img.StartTime, "end", img.EndTime, "is_gif", img.IsGif)
+	}
+	slog.Info("=========================")
+
 	slog.Info("Assembling video...")
 	result, err := generation.assemble(audio, images)
 	if err != nil {
@@ -98,20 +104,20 @@ func (pipeline *Pipeline) Generate(ctx context.Context, topic string) (*Generate
 }
 
 func (pipeline *Pipeline) newGenerationContext(ctx context.Context) *generationContext {
-	config := pipeline.service.Config()
+	cfg := pipeline.service.cfg
 	voices := pipeline.voices()
 	return &generationContext{
 		ctx:            ctx,
 		pipeline:       pipeline,
-		session:        newSession(config.Video.OutputDir),
+		session:        newSession(cfg.Video.OutputDir),
 		voices:         voices,
-		voiceMap:       buildVoiceMap(voices),
-		isConversation: config.Content.ConversationMode && len(voices) >= 2,
+		voiceMap:       speech.BuildVoiceMap(voices),
+		isConversation: cfg.Content.ConversationMode && len(voices) >= 2,
 	}
 }
 
 func (generation *generationContext) generateScript(topic string) (string, error) {
-	llmClient := generation.pipeline.service.LLM()
+	llmClient := generation.pipeline.service.llm
 	wordCount := generation.calculateWordCount()
 
 	if generation.isConversation {
@@ -123,23 +129,23 @@ func (generation *generationContext) generateScript(topic string) (string, error
 }
 
 func (generation *generationContext) calculateWordCount() int {
-	config := generation.pipeline.service.Config()
+	cfg := generation.pipeline.service.cfg
 
-	if config.Content.WordCount > 0 {
-		return config.Content.WordCount
+	if cfg.Content.WordCount > 0 {
+		return cfg.Content.WordCount
 	}
 
-	targetDuration := config.Content.TargetDuration
+	targetDuration := cfg.Content.TargetDuration
 	if targetDuration <= 0 {
-		targetDuration = config.Video.MaxDuration * 0.85
+		targetDuration = cfg.Video.MaxDuration * 0.85
 	}
 
-	speed := config.ElevenLabs.Speed
+	speed := cfg.ElevenLabs.Speed
 	if speed <= 0 {
 		speed = 1.0
 	}
 
-	wordsPerMinute := 150.0 * speed
+	wordsPerMinute := speech.DefaultWordsPerMinute * speed
 	wordCount := int(targetDuration * wordsPerMinute / 60.0)
 
 	if wordCount < 50 {
@@ -161,7 +167,7 @@ func (generation *generationContext) speakerNames() []string {
 }
 
 func (generation *generationContext) generateTitle(script, fallback string) string {
-	title, err := generation.pipeline.service.LLM().GenerateTitle(generation.ctx, script)
+	title, err := generation.pipeline.service.llm.GenerateTitle(generation.ctx, script)
 	if err != nil {
 		return fallback
 	}
@@ -176,14 +182,14 @@ func (generation *generationContext) generateAudio(script string) (*audioResult,
 }
 
 func (generation *generationContext) generateSingleAudio(script string) (*audioResult, error) {
-	result, err := generation.pipeline.service.TTS().GenerateSpeechWithTimings(generation.ctx, script)
+	result, err := generation.pipeline.service.tts.GenerateSpeechWithTimings(generation.ctx, script)
 	if err != nil {
 		return nil, fmt.Errorf("generate speech: %w", err)
 	}
 	return &audioResult{
 		data:     result.Audio,
 		timings:  result.Timings,
-		duration: audioDuration(result.Timings),
+		duration: speech.Duration(result.Timings),
 		script:   script,
 	}, nil
 }
@@ -199,7 +205,7 @@ func (generation *generationContext) generateConversationAudio(script string) (*
 		return nil, err
 	}
 
-	stitched, err := video.NewAudioStitcher(generation.pipeline.service.Config().Video.OutputDir).Stitch(generation.ctx, segments)
+	stitched, err := video.NewAudioStitcher(generation.pipeline.service.cfg.Video.OutputDir).Stitch(generation.ctx, segments)
 	if err != nil {
 		return nil, fmt.Errorf("stitch audio: %w", err)
 	}
@@ -248,7 +254,7 @@ func (generation *generationContext) generateSpeechSegments(parsed *dialogue.Scr
 			defer func() { <-semaphore }()
 
 			slog.Info("Generating speech", "line", j.index+1, "total", len(parsed.Lines), "speaker", j.line.Speaker)
-			speechResult, err := generation.pipeline.service.TTS().GenerateSpeechWithVoice(generation.ctx, j.line.Text, j.voice)
+			speechResult, err := generation.pipeline.service.tts.GenerateSpeechWithVoice(generation.ctx, j.line.Text, j.voice)
 			if err != nil {
 				results <- result{index: j.index, err: fmt.Errorf("generate speech for line %d: %w", j.index+1, err)}
 				return
@@ -277,28 +283,30 @@ func (generation *generationContext) generateSpeechSegments(parsed *dialogue.Scr
 }
 
 func (generation *generationContext) fetchImages(script string, timings []speech.WordTiming) []video.ImageOverlay {
-	fetcher := generation.pipeline.service.Fetcher()
+	fetcher := generation.pipeline.service.fetcher
 	if fetcher == nil {
 		slog.Warn("Image fetcher not configured (missing GOOGLE_SEARCH_API_KEY or GOOGLE_SEARCH_ENGINE_ID)")
 		return nil
 	}
 
-	config := generation.pipeline.service.Config()
-	count := config.Visuals.Count
+	cfg := generation.pipeline.service.cfg
+	count := cfg.Visuals.Count
 	if count <= 0 {
 		count = 5
 	}
 
 	slog.Info("Generating visual cues from script...", "count", count)
-	cues, err := generation.pipeline.service.LLM().GenerateVisuals(generation.ctx, script, count)
+	cues, err := generation.pipeline.service.llm.GenerateVisuals(generation.ctx, script, count)
 	if err != nil {
 		slog.Warn("Failed to generate visuals", "error", err)
 		return nil
 	}
-	slog.Info("Generated visual cues", "count", len(cues))
+
+	slog.Info("=== LLM Visual Cues ===", "count", len(cues))
 	for i, cue := range cues {
-		slog.Info("Visual cue", "index", i, "keyword", cue.Keyword, "query", cue.SearchQuery)
+		slog.Info("[LLM] Visual", "index", i, "keyword", cue.Keyword, "search_query", cue.SearchQuery, "type", cue.Type)
 	}
+	slog.Info("=======================")
 
 	searchCues := make([]search.VisualCue, len(cues))
 	for i, cue := range cues {
@@ -309,7 +317,7 @@ func (generation *generationContext) fetchImages(script string, timings []speech
 		}
 	}
 
-	slog.Info("Fetching images from Google...", "timings_count", len(timings))
+	slog.Info("Fetching visuals...", "timings_count", len(timings))
 	return fetcher.Fetch(generation.ctx, search.FetchRequest{
 		Script:   script,
 		Visuals:  searchCues,
@@ -319,14 +327,14 @@ func (generation *generationContext) fetchImages(script string, timings []speech
 }
 
 func (generation *generationContext) assemble(audio *audioResult, images []video.ImageOverlay) (*video.AssembleResult, error) {
-	config := generation.pipeline.service.Config()
-	if config.Video.MaxDuration > 0 && audio.duration > config.Video.MaxDuration {
-		return nil, fmt.Errorf("audio duration %.1fs exceeds limit of %.0fs", audio.duration, config.Video.MaxDuration)
+	cfg := generation.pipeline.service.cfg
+	if cfg.Video.MaxDuration > 0 && audio.duration > cfg.Video.MaxDuration {
+		return nil, fmt.Errorf("audio duration %.1fs exceeds limit of %.0fs", audio.duration, cfg.Video.MaxDuration)
 	}
 
-	speakerColors := buildSpeakerColors(generation.voiceMap)
+	speakerColors := speech.BuildSpeakerColors(generation.voiceMap)
 
-	return generation.pipeline.service.Assembler().Assemble(generation.ctx, video.AssembleRequest{
+	return generation.pipeline.service.assembler.Assemble(generation.ctx, video.AssembleRequest{
 		AudioPath:     generation.session.audioPath(),
 		AudioDuration: audio.duration,
 		Script:        audio.script,
@@ -338,7 +346,7 @@ func (generation *generationContext) assemble(audio *audioResult, images []video
 }
 
 func (pipeline *Pipeline) voices() []speech.VoiceConfig {
-	cfg := pipeline.service.Config()
+	cfg := pipeline.service.cfg
 	var result []speech.VoiceConfig
 
 	if cfg.ElevenLabs.HostVoice.ID != "" {
@@ -369,7 +377,7 @@ func (pipeline *Pipeline) GenerateFromReddit(ctx context.Context) (*GenerateResu
 }
 
 func (pipeline *Pipeline) fetchRedditTopic(ctx context.Context) (string, error) {
-	cfg := pipeline.service.Config()
+	cfg := pipeline.service.cfg
 	redditCfg := cfg.Reddit
 
 	subreddits := redditCfg.Subreddits
@@ -388,7 +396,7 @@ func (pipeline *Pipeline) fetchRedditTopic(ctx context.Context) (string, error) 
 	}
 
 	slog.Info("Fetching Reddit posts", "subreddit", subreddit, "sort", sort)
-	posts, err := pipeline.service.Reddit().GetSubredditPosts(ctx, subreddit, sort, postLimit)
+	posts, err := pipeline.service.reddit.GetSubredditPosts(ctx, subreddit, sort, postLimit)
 	if err != nil {
 		return "", fmt.Errorf("fetch reddit posts: %w", err)
 	}
@@ -403,13 +411,13 @@ func (pipeline *Pipeline) fetchRedditTopic(ctx context.Context) (string, error) 
 }
 
 func (pipeline *Pipeline) Upload(ctx context.Context, request UploadRequest) (*distribution.UploadResponse, error) {
-	config := pipeline.service.Config()
-	response, err := pipeline.service.Uploader().Upload(ctx, distribution.UploadRequest{
+	cfg := pipeline.service.cfg
+	response, err := pipeline.service.uploader.Upload(ctx, distribution.UploadRequest{
 		FilePath:    request.VideoPath,
 		Title:       request.Title,
 		Description: request.Description,
-		Tags:        config.YouTube.DefaultTags,
-		Privacy:     config.YouTube.PrivacyStatus,
+		Tags:        cfg.YouTube.DefaultTags,
+		Privacy:     cfg.YouTube.PrivacyStatus,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upload video: %w", err)

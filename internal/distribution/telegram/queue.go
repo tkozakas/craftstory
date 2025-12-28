@@ -17,6 +17,8 @@ type QueuedVideo struct {
 	Script    string    `json:"script"`
 	Topic     string    `json:"topic"`
 	AddedAt   time.Time `json:"added_at"`
+	MessageID int       `json:"message_id,omitempty"`
+	ChatID    int64     `json:"chat_id,omitempty"`
 }
 
 type VideoQueue struct {

@@ -113,7 +113,7 @@ func (s *ApprovalService) sendNextVideoTo(chatID int64) {
 	caption := fmt.Sprintf("*%s*\n\n📹 Video %d/%d remaining in queue", video.Title, s.queue.Len()+1, maxQueueSize)
 	keyboard := NewApprovalKeyboard(callbackApprove, callbackReject)
 
-	_, err = s.client.SendVideo(chatID, video.VideoPath, caption, keyboard)
+	resp, err := s.client.SendVideo(chatID, video.VideoPath, caption, keyboard)
 	if err != nil {
 		slog.Error("Failed to send video", "error", err)
 		s.pendingMu.Lock()
@@ -123,7 +123,12 @@ func (s *ApprovalService) sendNextVideoTo(chatID int64) {
 		return
 	}
 
-	slog.Info("Video sent for review", "title", video.Title, "chat_id", chatID)
+	s.pendingMu.Lock()
+	s.pendingVideo.MessageID = resp.MessageID
+	s.pendingVideo.ChatID = chatID
+	s.pendingMu.Unlock()
+
+	slog.Info("Video sent for review", "title", video.Title, "chat_id", chatID, "message_id", resp.MessageID)
 }
 
 func (s *ApprovalService) notifyQueueStatus() {
@@ -322,15 +327,19 @@ func (s *ApprovalService) handleCallbackQuery(cb *CallbackQuery) {
 	}
 
 	approved := cb.Data == callbackApprove
-	responseText := "Rejected"
-	if approved {
-		responseText = "Approved - uploading..."
-	}
 
-	_ = s.client.AnswerCallbackQuery(cb.ID, responseText)
+	_ = s.client.AnswerCallbackQuery(cb.ID, "")
 
 	if cb.Message != nil {
 		_ = s.client.EditMessageReplyMarkup(cb.Message.Chat.ID, cb.Message.MessageID, nil)
+
+		if approved {
+			caption := fmt.Sprintf("*%s*\n\n⏳ Uploading...", video.Title)
+			_ = s.client.EditMessageCaption(cb.Message.Chat.ID, cb.Message.MessageID, caption)
+		} else {
+			caption := fmt.Sprintf("*%s*\n\n❌ Rejected", video.Title)
+			_ = s.client.EditMessageCaption(cb.Message.Chat.ID, cb.Message.MessageID, caption)
+		}
 	}
 
 	result := &ApprovalResult{
@@ -400,7 +409,13 @@ func (s *ApprovalService) RequestApproval(ctx context.Context, request ApprovalR
 	return &ApprovalResult{Approved: false, Message: "queued"}, nil
 }
 
-func (s *ApprovalService) NotifyUploadComplete(title, videoURL string) {
+func (s *ApprovalService) NotifyUploadComplete(title, videoURL string, video *QueuedVideo) {
+	if video != nil && video.MessageID != 0 && video.ChatID != 0 {
+		caption := fmt.Sprintf("*%s*\n\n✅ Uploaded\n%s", title, videoURL)
+		_ = s.client.EditMessageCaption(video.ChatID, video.MessageID, caption)
+		return
+	}
+
 	s.reviewersMu.RLock()
 	defer s.reviewersMu.RUnlock()
 
@@ -410,7 +425,13 @@ func (s *ApprovalService) NotifyUploadComplete(title, videoURL string) {
 	}
 }
 
-func (s *ApprovalService) NotifyUploadFailed(title string, err error) {
+func (s *ApprovalService) NotifyUploadFailed(title string, err error, video *QueuedVideo) {
+	if video != nil && video.MessageID != 0 && video.ChatID != 0 {
+		caption := fmt.Sprintf("*%s*\n\n❌ Upload failed: %s", title, err.Error())
+		_ = s.client.EditMessageCaption(video.ChatID, video.MessageID, caption)
+		return
+	}
+
 	s.reviewersMu.RLock()
 	defer s.reviewersMu.RUnlock()
 

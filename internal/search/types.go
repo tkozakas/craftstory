@@ -31,28 +31,31 @@ type GIFSearcher interface {
 	Download(ctx context.Context, gifURL string) ([]byte, error)
 }
 
-func findKeywordInTimings(timings []speech.WordTiming, keyword string) int {
+func findKeywordInTimings(timings []speech.WordTiming, keyword string, startFrom int) int {
 	if keyword == "" || len(timings) == 0 {
 		return -1
+	}
+	if startFrom < 0 {
+		startFrom = 0
 	}
 
 	keywordLower := strings.ToLower(keyword)
 	keywordWords := strings.Fields(keywordLower)
 
 	if len(keywordWords) == 1 {
-		for i, t := range timings {
-			if cleanWord(t.Word) == keywordLower {
+		for i := startFrom; i < len(timings); i++ {
+			if cleanWord(timings[i].Word) == keywordLower {
 				return i
 			}
 		}
-		for i, t := range timings {
-			cleaned := cleanWord(t.Word)
+		for i := startFrom; i < len(timings); i++ {
+			cleaned := cleanWord(timings[i].Word)
 			if strings.Contains(cleaned, keywordLower) || strings.Contains(keywordLower, cleaned) {
 				return i
 			}
 		}
-		for i, t := range timings {
-			cleaned := cleanWord(t.Word)
+		for i := startFrom; i < len(timings); i++ {
+			cleaned := cleanWord(timings[i].Word)
 			if len(cleaned) > 3 && len(keywordLower) > 3 {
 				if strings.HasPrefix(cleaned, keywordLower[:len(keywordLower)-1]) ||
 					strings.HasPrefix(keywordLower, cleaned[:len(cleaned)-1]) {
@@ -63,7 +66,7 @@ func findKeywordInTimings(timings []speech.WordTiming, keyword string) int {
 		return -1
 	}
 
-	for i := 0; i <= len(timings)-len(keywordWords); i++ {
+	for i := startFrom; i <= len(timings)-len(keywordWords); i++ {
 		match := true
 		for j, kw := range keywordWords {
 			if cleanWord(timings[i+j].Word) != kw {
@@ -77,8 +80,8 @@ func findKeywordInTimings(timings []speech.WordTiming, keyword string) int {
 	}
 
 	firstWord := keywordWords[0]
-	for i, t := range timings {
-		if cleanWord(t.Word) == firstWord {
+	for i := startFrom; i < len(timings); i++ {
+		if cleanWord(timings[i].Word) == firstWord {
 			return i
 		}
 	}
@@ -112,14 +115,29 @@ func imagePath(dir string, index int, ext string) string {
 	return filepath.Join(dir, fmt.Sprintf("image_%d%s", index, ext))
 }
 
+// detectImageFormat returns the file extension based on magic bytes.
+// Returns empty string if format is not recognized.
+func detectImageFormat(data []byte) string {
+	if len(data) < 12 {
+		return ""
+	}
+	if bytes.HasPrefix(data, []byte{0xFF, 0xD8, 0xFF}) {
+		return ".jpg"
+	}
+	if bytes.HasPrefix(data, []byte{0x89, 0x50, 0x4E, 0x47}) {
+		return ".png"
+	}
+	if bytes.HasPrefix(data, []byte("RIFF")) && bytes.Equal(data[8:12], []byte("WEBP")) {
+		return ".webp"
+	}
+	return ""
+}
+
 func isValidImage(data []byte) bool {
 	if len(data) < 100 {
 		return false
 	}
-	if bytes.HasPrefix(data, []byte{0xFF, 0xD8, 0xFF}) {
-		return true
-	}
-	if bytes.HasPrefix(data, []byte{0x89, 0x50, 0x4E, 0x47}) {
+	if detectImageFormat(data) != "" {
 		return true
 	}
 	_, _, err := image.Decode(bytes.NewReader(data))

@@ -147,12 +147,12 @@ func handleApprovals(ctx context.Context, pipeline *app.Pipeline, approval *tele
 		})
 		if err != nil {
 			slog.Error("Upload failed", "error", err)
-			approval.NotifyUploadFailed(video.Title, err)
+			approval.NotifyUploadFailed(video.Title, err, video)
 			continue
 		}
 
 		slog.Info("Upload complete", "title", video.Title, "url", resp.URL)
-		approval.NotifyUploadComplete(video.Title, resp.URL)
+		approval.NotifyUploadComplete(video.Title, resp.URL, video)
 	}
 }
 

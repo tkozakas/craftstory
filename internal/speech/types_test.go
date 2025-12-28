@@ -269,6 +269,92 @@ func TestVoiceConfigFields(t *testing.T) {
 	}
 }
 
+func TestDuration(t *testing.T) {
+	tests := []struct {
+		name    string
+		timings []WordTiming
+		want    float64
+	}{
+		{
+			name:    "emptyTimings",
+			timings: []WordTiming{},
+			want:    0,
+		},
+		{
+			name:    "nilTimings",
+			timings: nil,
+			want:    0,
+		},
+		{
+			name: "singleWord",
+			timings: []WordTiming{
+				{Word: "Hello", StartTime: 0, EndTime: 0.5},
+			},
+			want: 0.5,
+		},
+		{
+			name: "multipleWords",
+			timings: []WordTiming{
+				{Word: "Hello", StartTime: 0, EndTime: 0.5},
+				{Word: "World", StartTime: 0.5, EndTime: 1.0},
+				{Word: "Test", StartTime: 1.0, EndTime: 1.5},
+			},
+			want: 1.5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Duration(tt.timings)
+			if got != tt.want {
+				t.Errorf("Duration() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildVoiceMap(t *testing.T) {
+	voices := []VoiceConfig{
+		{ID: "1", Name: "Alice"},
+		{ID: "2", Name: "Bob"},
+	}
+
+	m := BuildVoiceMap(voices)
+
+	if len(m) != 2 {
+		t.Errorf("BuildVoiceMap() returned %d entries, want 2", len(m))
+	}
+	if m["Alice"].ID != "1" {
+		t.Errorf("BuildVoiceMap()[Alice].ID = %q, want %q", m["Alice"].ID, "1")
+	}
+	if m["Bob"].ID != "2" {
+		t.Errorf("BuildVoiceMap()[Bob].ID = %q, want %q", m["Bob"].ID, "2")
+	}
+}
+
+func TestBuildSpeakerColors(t *testing.T) {
+	voiceMap := map[string]VoiceConfig{
+		"Alice": {ID: "1", Name: "Alice", SubtitleColor: "#FF0000"},
+		"Bob":   {ID: "2", Name: "Bob", SubtitleColor: "#00FF00"},
+		"Carol": {ID: "3", Name: "Carol", SubtitleColor: ""},
+	}
+
+	colors := BuildSpeakerColors(voiceMap)
+
+	if len(colors) != 2 {
+		t.Errorf("BuildSpeakerColors() returned %d entries, want 2", len(colors))
+	}
+	if colors["Alice"] != "#FF0000" {
+		t.Errorf("BuildSpeakerColors()[Alice] = %q, want #FF0000", colors["Alice"])
+	}
+	if colors["Bob"] != "#00FF00" {
+		t.Errorf("BuildSpeakerColors()[Bob] = %q, want #00FF00", colors["Bob"])
+	}
+	if _, ok := colors["Carol"]; ok {
+		t.Error("BuildSpeakerColors() should not include Carol (empty color)")
+	}
+}
+
 func TestTimingSyncAcrossConversation(t *testing.T) {
 	adamTimings := []WordTiming{
 		{Word: "Hello", StartTime: 0.0, EndTime: 0.3, Speaker: "Adam"},

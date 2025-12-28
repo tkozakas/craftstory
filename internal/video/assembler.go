@@ -289,7 +289,7 @@ func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, 
 	}
 
 	if len(overlays) > maxOverlays {
-		a.log("limiting overlays", "from", len(overlays), "to", maxOverlays)
+		slog.Info("Limiting overlays", "from", len(overlays), "to", maxOverlays)
 		overlays = overlays[:maxOverlays]
 	}
 
@@ -298,14 +298,30 @@ func (a *Assembler) buildFilterComplex(assPath string, overlays []ImageOverlay, 
 		inputOffset = 3
 	}
 
+	slog.Info("Building overlay filters", "overlay_count", len(overlays), "input_offset", inputOffset)
+
 	filters := []string{fmt.Sprintf("[0:v]%s,ass=%s[base]", scale, assPath)}
 	lastOut := "base"
 
 	for i, ov := range overlays {
 		img := fmt.Sprintf("img%d", i)
 		out := fmt.Sprintf("v%d", i)
-		filters = append(filters, fmt.Sprintf("[%d:v]scale=%d:%d,format=rgba[%s]", inputOffset+i, ov.Width, ov.Height, img))
-		filters = append(filters, fmt.Sprintf("[%s][%s]overlay=(W-w)/2:100:enable='between(t,%.2f,%.2f)'[%s]", lastOut, img, ov.StartTime, ov.EndTime, out))
+
+		inputIdx := inputOffset + i
+		scaleFilter := fmt.Sprintf("[%d:v]scale=%d:%d,format=rgba[%s]", inputIdx, ov.Width, ov.Height, img)
+		overlayFilter := fmt.Sprintf("[%s][%s]overlay=(W-w)/2:100:enable='between(t,%.2f,%.2f)'[%s]", lastOut, img, ov.StartTime, ov.EndTime, out)
+
+		slog.Info("Overlay filter",
+			"index", i,
+			"input", inputIdx,
+			"path", ov.ImagePath,
+			"start", ov.StartTime,
+			"end", ov.EndTime,
+			"is_gif", ov.IsGif,
+		)
+
+		filters = append(filters, scaleFilter)
+		filters = append(filters, overlayFilter)
 		lastOut = out
 	}
 
@@ -342,7 +358,12 @@ func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTi
 	}
 
 	for _, ov := range overlays {
-		args = append(args, "-i", ov.ImagePath)
+		displayDuration := ov.EndTime - ov.StartTime + 0.5
+		if ov.IsGif {
+			args = append(args, "-t", fmt.Sprintf("%.2f", displayDuration), "-i", ov.ImagePath)
+		} else {
+			args = append(args, "-loop", "1", "-t", fmt.Sprintf("%.2f", displayDuration), "-i", ov.ImagePath)
+		}
 	}
 
 	args = append(args, "-filter_complex", filterComplex, "-map", "[v]", "-map", "[a]")

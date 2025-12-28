@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+const DefaultWordsPerMinute = 150.0
+
 type WordTiming struct {
 	Word      string
 	StartTime float64
@@ -77,4 +79,29 @@ func AddPauses(text string) string {
 	text = strings.ReplaceAll(text, "? ", "?.. ")
 	text = strings.ReplaceAll(text, "…", "...")
 	return text
+}
+
+func Duration(timings []WordTiming) float64 {
+	if len(timings) == 0 {
+		return 0
+	}
+	return timings[len(timings)-1].EndTime
+}
+
+func BuildVoiceMap(voices []VoiceConfig) map[string]VoiceConfig {
+	m := make(map[string]VoiceConfig, len(voices))
+	for _, v := range voices {
+		m[v.Name] = v
+	}
+	return m
+}
+
+func BuildSpeakerColors(voiceMap map[string]VoiceConfig) map[string]string {
+	colors := make(map[string]string, len(voiceMap))
+	for name, voice := range voiceMap {
+		if voice.SubtitleColor != "" {
+			colors[name] = voice.SubtitleColor
+		}
+	}
+	return colors
 }
