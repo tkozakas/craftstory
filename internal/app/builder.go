@@ -6,6 +6,7 @@ import (
 	"craftstory/internal/distribution/telegram"
 	"craftstory/internal/distribution/youtube"
 	"craftstory/internal/llm/groq"
+	"craftstory/internal/search"
 	"craftstory/internal/search/google"
 	"craftstory/internal/search/tenor"
 	"craftstory/internal/speech"
@@ -101,6 +102,20 @@ func BuildService(cfg *config.Config, verbose bool) (*BuildResult, error) {
 		gifSearch = tenor.NewClient(tenor.Config{APIKey: cfg.TenorAPIKey})
 	}
 
+	var fetcher *search.Fetcher
+	if imageSearch != nil || gifSearch != nil {
+		var gifSearcher search.GIFSearcher
+		if gifSearch != nil {
+			gifSearcher = gifSearch
+		}
+		fetcher = search.NewFetcher(imageSearch, gifSearcher, search.FetcherConfig{
+			MaxDisplayTime: cfg.Visuals.MaxDisplayTime,
+			ImageWidth:     cfg.Visuals.ImageWidth,
+			ImageHeight:    cfg.Visuals.ImageHeight,
+			MinGap:         cfg.Visuals.MinGap,
+		})
+	}
+
 	var ytUploader distribution.Uploader
 	if cfg.YouTubeClientID != "" && cfg.YouTubeClientSecret != "" {
 		auth := youtube.NewAuth(cfg.YouTubeClientID, cfg.YouTubeClientSecret, cfg.YouTubeTokenPath)
@@ -114,16 +129,15 @@ func BuildService(cfg *config.Config, verbose bool) (*BuildResult, error) {
 	}
 
 	service := NewService(ServiceOptions{
-		Config:      cfg,
-		LLM:         llmClient,
-		TTS:         ttsProvider,
-		Uploader:    ytUploader,
-		Assembler:   assembler,
-		Storage:     localStorage,
-		Reddit:      redditClient,
-		ImageSearch: imageSearch,
-		GIFSearch:   gifSearch,
-		Approval:    approval,
+		Config:    cfg,
+		LLM:       llmClient,
+		TTS:       ttsProvider,
+		Uploader:  ytUploader,
+		Assembler: assembler,
+		Storage:   localStorage,
+		Reddit:    redditClient,
+		Fetcher:   fetcher,
+		Approval:  approval,
 	})
 
 	return &BuildResult{

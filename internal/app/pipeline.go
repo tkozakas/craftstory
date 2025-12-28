@@ -81,13 +81,7 @@ func (pipeline *Pipeline) Generate(ctx context.Context, topic string) (*Generate
 	slog.Info("Fetching images...")
 	images := generation.fetchImages(script, audio.timings)
 
-	slog.Info("=== Images to overlay ===", "count", len(images))
-	for i, img := range images {
-		slog.Info("Image overlay", "index", i, "path", img.ImagePath, "start", img.StartTime, "end", img.EndTime, "is_gif", img.IsGif)
-	}
-	slog.Info("=========================")
-
-	slog.Info("Assembling video...")
+	slog.Info("Assembling video...", "overlays", len(images))
 	result, err := generation.assemble(audio, images)
 	if err != nil {
 		return nil, err
@@ -301,12 +295,6 @@ func (generation *generationContext) fetchImages(script string, timings []speech
 		slog.Warn("Failed to generate visuals", "error", err)
 		return nil
 	}
-
-	slog.Info("=== LLM Visual Cues ===", "count", len(cues))
-	for i, cue := range cues {
-		slog.Info("[LLM] Visual", "index", i, "keyword", cue.Keyword, "search_query", cue.SearchQuery, "type", cue.Type)
-	}
-	slog.Info("=======================")
 
 	searchCues := make([]search.VisualCue, len(cues))
 	for i, cue := range cues {
