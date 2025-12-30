@@ -119,7 +119,85 @@ func (c *Client) GenerateTitle(ctx context.Context, script string) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("render prompt: %w", err)
 	}
-	return c.generate(ctx, c.prompts.System.Title, prompt)
+
+	content, err := c.generate(ctx, c.prompts.System.Title, prompt)
+	if err != nil {
+		return "", err
+	}
+
+	return cleanTitle(content), nil
+}
+
+func cleanTitle(raw string) string {
+	title := strings.TrimSpace(raw)
+	title = strings.Trim(title, "\"'")
+
+	if idx := strings.Index(title, "\n"); idx > 0 {
+		title = title[:idx]
+	}
+
+	title = strings.TrimSpace(title)
+
+	if len(title) > 100 {
+		title = title[:100]
+	}
+
+	return title
+}
+
+func (c *Client) GenerateTags(ctx context.Context, script string, count int) ([]string, error) {
+	prompt, err := c.prompts.RenderTags(prompts.TagsParams{Script: script, Count: count})
+	if err != nil {
+		return nil, fmt.Errorf("render prompt: %w", err)
+	}
+
+	content, err := c.generateJSONContent(ctx, c.prompts.System.Tags, prompt)
+	if err != nil {
+		return nil, err
+	}
+
+	var tags []string
+	if err := json.Unmarshal([]byte(content), &tags); err == nil && len(tags) > 0 {
+		return cleanTags(tags), nil
+	}
+
+	var wrapped map[string][]string
+	if err := json.Unmarshal([]byte(content), &wrapped); err != nil {
+		return nil, fmt.Errorf("parse tags response: %w", err)
+	}
+
+	for _, key := range []string{"tags", "keywords", "results"} {
+		if t, ok := wrapped[key]; ok && len(t) > 0 {
+			return cleanTags(t), nil
+		}
+	}
+
+	for _, t := range wrapped {
+		if len(t) > 0 {
+			return cleanTags(t), nil
+		}
+	}
+
+	return nil, fmt.Errorf("no tags found in response")
+}
+
+func cleanTags(tags []string) []string {
+	result := make([]string, 0, len(tags))
+	seen := make(map[string]bool)
+
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		tag = strings.Trim(tag, "#")
+		tag = strings.ToLower(tag)
+
+		if tag == "" || seen[tag] {
+			continue
+		}
+		seen[tag] = true
+		result = append(result, tag)
+	}
+
+	return result
 }
 
 func (c *Client) generate(ctx context.Context, systemPrompt, userPrompt string) (string, error) {

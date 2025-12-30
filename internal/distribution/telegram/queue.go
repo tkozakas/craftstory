@@ -11,6 +11,7 @@ type QueuedVideo struct {
 	PreviewPath string    `json:"preview_path,omitempty"`
 	Title       string    `json:"title"`
 	Script      string    `json:"script"`
+	Tags        []string  `json:"tags,omitempty"`
 	Topic       string    `json:"topic"`
 	AddedAt     time.Time `json:"added_at"`
 	MessageID   int       `json:"message_id,omitempty"`

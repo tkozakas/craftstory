@@ -19,6 +19,7 @@ type Pipeline struct {
 
 type GenerateResult struct {
 	Title         string
+	Tags          []string
 	ScriptContent string
 	OutputDir     string
 	AudioPath     string
@@ -31,6 +32,7 @@ type UploadRequest struct {
 	VideoPath   string
 	Title       string
 	Description string
+	Tags        []string
 }
 
 type generationContext struct {
@@ -63,6 +65,7 @@ func (pipeline *Pipeline) Generate(ctx context.Context, topic string) (*Generate
 	}
 
 	title := generation.generateTitle(script, topic)
+	tags := generation.generateTags(script)
 	if err := generation.session.finalize(title); err != nil {
 		return nil, err
 	}
@@ -101,6 +104,7 @@ func (pipeline *Pipeline) Generate(ctx context.Context, topic string) (*Generate
 
 	return &GenerateResult{
 		Title:         title,
+		Tags:          tags,
 		ScriptContent: script,
 		OutputDir:     generation.session.dir,
 		AudioPath:     generation.session.audioPath(),
@@ -176,9 +180,23 @@ func (generation *generationContext) speakerNames() []string {
 func (generation *generationContext) generateTitle(script, fallback string) string {
 	title, err := generation.pipeline.service.llm.GenerateTitle(generation.ctx, script)
 	if err != nil {
+		slog.Warn("Failed to generate title", "error", err)
 		return fallback
 	}
 	return title
+}
+
+func (generation *generationContext) generateTags(script string) []string {
+	cfg := generation.pipeline.service.cfg
+	count := 10
+
+	tags, err := generation.pipeline.service.llm.GenerateTags(generation.ctx, script, count)
+	if err != nil {
+		slog.Warn("Failed to generate tags", "error", err)
+		return cfg.YouTube.DefaultTags
+	}
+
+	return append(tags, cfg.YouTube.DefaultTags...)
 }
 
 func (generation *generationContext) generateAudio(script string) (*audioResult, error) {
@@ -413,11 +431,16 @@ func (pipeline *Pipeline) Upload(ctx context.Context, request UploadRequest) (*d
 	}
 
 	cfg := pipeline.service.cfg
+	tags := request.Tags
+	if len(tags) == 0 {
+		tags = cfg.YouTube.DefaultTags
+	}
+
 	response, err := pipeline.service.uploader.Upload(ctx, distribution.UploadRequest{
 		FilePath:    request.VideoPath,
 		Title:       request.Title,
 		Description: request.Description,
-		Tags:        cfg.YouTube.DefaultTags,
+		Tags:        tags,
 		Privacy:     cfg.YouTube.PrivacyStatus,
 	})
 	if err != nil {

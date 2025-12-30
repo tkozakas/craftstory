@@ -84,6 +84,7 @@ func runCron(cmd *cobra.Command, args []string) error {
 				VideoPath:   genResult.VideoPath,
 				Title:       genResult.Title,
 				Description: genResult.ScriptContent,
+				Tags:        genResult.Tags,
 			})
 			if err != nil {
 				slog.Error("Upload failed", "error", err)
@@ -99,6 +100,7 @@ func runCron(cmd *cobra.Command, args []string) error {
 				PreviewPath: genResult.PreviewPath,
 				Title:       genResult.Title,
 				Script:      genResult.ScriptContent,
+				Tags:        genResult.Tags,
 			})
 			if err != nil {
 				slog.Error("Failed to queue for approval", "error", err)
@@ -145,6 +147,7 @@ func handleApprovals(ctx context.Context, pipeline *app.Pipeline, approval *tele
 			VideoPath:   video.VideoPath,
 			Title:       video.Title,
 			Description: video.Script,
+			Tags:        video.Tags,
 		})
 		if err != nil {
 			slog.Error("Upload failed", "error", err)
@@ -194,7 +197,7 @@ func handleGenerations(ctx context.Context, pipeline *app.Pipeline, approval *te
 		}
 
 		slog.Info("Video generated", "title", genResult.Title, "path", genResult.VideoPath)
-		approval.NotifyGenerationComplete(req.ChatID, genResult.VideoPath, genResult.PreviewPath, genResult.Title, genResult.ScriptContent)
+		approval.NotifyGenerationComplete(req.ChatID, genResult.VideoPath, genResult.PreviewPath, genResult.Title, genResult.ScriptContent, genResult.Tags)
 		approval.CompleteGeneration(req.ChatID)
 	}
 }

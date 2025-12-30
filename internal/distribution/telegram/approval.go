@@ -40,6 +40,7 @@ type ApprovalRequest struct {
 	PreviewPath string
 	Title       string
 	Script      string
+	Tags        []string
 }
 
 type ApprovalResult struct {
@@ -415,6 +416,7 @@ func (s *ApprovalService) RequestApproval(ctx context.Context, request ApprovalR
 		PreviewPath: request.PreviewPath,
 		Title:       request.Title,
 		Script:      request.Script,
+		Tags:        request.Tags,
 	}
 
 	if err := s.QueueVideo(video); err != nil {
@@ -474,7 +476,7 @@ func (s *ApprovalService) NotifyGenerating(chatID int64, topic string) {
 	_ = s.client.SendMessage(chatID, msg)
 }
 
-func (s *ApprovalService) NotifyGenerationComplete(chatID int64, videoPath, previewPath, title, script string) {
+func (s *ApprovalService) NotifyGenerationComplete(chatID int64, videoPath, previewPath, title, script string, tags []string) {
 	caption := fmt.Sprintf("*%s*\n\nGenerated successfully.", title)
 
 	videoToSend := videoPath
@@ -494,6 +496,7 @@ func (s *ApprovalService) NotifyGenerationComplete(chatID int64, videoPath, prev
 			PreviewPath: previewPath,
 			Title:       title,
 			Script:      script,
+			Tags:        tags,
 		}
 		if err := s.QueueVideo(video); err != nil {
 			slog.Error("Failed to queue video for approval", "error", err)

@@ -18,7 +18,8 @@ system:
     Use natural speech: 'wait,' 'actually,' 'no way,' 'here's the crazy part.'
     Output ONLY dialogue lines in 'Speaker: text' format.
   visuals: "Extract visual keywords from scripts. Return UNIQUE keywords in ORDER OF APPEARANCE. Focus on topic-specific words. No duplicates. Return valid JSON only."
-  title: "You are a CTR expert. You generate titles that use curiosity gaps. Max 60 characters. Make it feel like gossip or a secret."
+  title: "You generate viral YouTube Shorts titles. Be concise, intriguing, and clickable without being clickbait."
+  tags: "You generate relevant YouTube tags for video discoverability. Return valid JSON array only."
 
 script:
   single: |
@@ -153,11 +154,39 @@ script:
 
 title:
   generate: |
-    Generate 3 viral titles for this script. 
-    Use these frameworks:
-    1. Negative Hook: Why your [Topic] is failing.
-    2. The Secret: The [Topic] trick they don't tell you.
-    3. The Superlative: The fastest way to master [Topic].
-
+    Generate ONE viral YouTube Shorts title for this script.
+    
+    RULES:
+    - Maximum 60 characters
+    - Use curiosity gaps or shocking statements
+    - Make it feel like gossip or a secret being revealed
+    - No clickbait that doesn't match content
+    - No quotes, no emojis, no hashtags
+    
+    GOOD EXAMPLES:
+    - "Why Google Fired Their Best Engineer"
+    - "The Code That Cost Microsoft Billions"
+    - "Nobody Talks About This JavaScript Bug"
+    
+    BAD EXAMPLES:
+    - "Amazing Programming Facts You Won't Believe!" (too generic)
+    - "🔥 CRAZY Tech Story 🔥" (emojis, all caps)
+    
     Script: {{.Script}}
-    Return: Just the 3 titles, one per line, no numbering.
+    
+    Return ONLY the title, nothing else.
+
+tags:
+  generate: |
+    Generate {{.Count}} YouTube tags for this script.
+    
+    RULES:
+    - Mix of broad and specific tags
+    - Include topic keywords from the script
+    - Include related trending terms
+    - No hashtags, just plain words/phrases
+    - Each tag should be 1-3 words max
+    
+    Script: {{.Script}}
+    
+    Return tags as JSON array: ["tag1", "tag2", "tag3"]

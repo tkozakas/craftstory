@@ -13,4 +13,5 @@ type Client interface {
 	GenerateConversation(ctx context.Context, topic string, speakers []string, wordCount int) (string, error)
 	GenerateVisuals(ctx context.Context, script string, count int) ([]VisualCue, error)
 	GenerateTitle(ctx context.Context, script string) (string, error)
+	GenerateTags(ctx context.Context, script string, count int) ([]string, error)
 }

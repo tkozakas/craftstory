@@ -74,6 +74,7 @@ func runOnce(cmd *cobra.Command, args []string) error {
 			VideoPath:   genResult.VideoPath,
 			Title:       genResult.Title,
 			Description: genResult.ScriptContent,
+			Tags:        genResult.Tags,
 		})
 		if err != nil {
 			return err

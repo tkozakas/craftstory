@@ -15,6 +15,7 @@ type Prompts struct {
 	System SystemPrompts `yaml:"system"`
 	Script ScriptPrompts `yaml:"script"`
 	Title  TitlePrompts  `yaml:"title"`
+	Tags   TagsPrompts   `yaml:"tags"`
 }
 
 type SystemPrompts struct {
@@ -22,6 +23,7 @@ type SystemPrompts struct {
 	Conversation string `yaml:"conversation"`
 	Visuals      string `yaml:"visuals"`
 	Title        string `yaml:"title"`
+	Tags         string `yaml:"tags"`
 }
 
 type ScriptPrompts struct {
@@ -31,6 +33,10 @@ type ScriptPrompts struct {
 }
 
 type TitlePrompts struct {
+	Generate string `yaml:"generate"`
+}
+
+type TagsPrompts struct {
 	Generate string `yaml:"generate"`
 }
 
@@ -54,6 +60,11 @@ type VisualsParams struct {
 
 type TitleParams struct {
 	Script string
+}
+
+type TagsParams struct {
+	Script string
+	Count  int
 }
 
 func Load() (*Prompts, error) {
@@ -88,6 +99,10 @@ func (p *Prompts) RenderVisuals(params VisualsParams) (string, error) {
 
 func (p *Prompts) RenderTitle(params TitleParams) (string, error) {
 	return render(p.Title.Generate, params)
+}
+
+func (p *Prompts) RenderTags(params TagsParams) (string, error) {
+	return render(p.Tags.Generate, params)
 }
 
 func render(tmpl string, data any) (string, error) {
