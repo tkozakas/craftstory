@@ -9,7 +9,6 @@ import (
 	"craftstory/internal/video"
 )
 
-// FetcherConfig configures the visual fetcher.
 type FetcherConfig struct {
 	MaxDisplayTime float64
 	ImageWidth     int
@@ -17,7 +16,6 @@ type FetcherConfig struct {
 	MinGap         float64
 }
 
-// FetchRequest contains parameters for fetching visuals.
 type FetchRequest struct {
 	Script   string
 	Visuals  []VisualCue
@@ -25,14 +23,12 @@ type FetchRequest struct {
 	ImageDir string
 }
 
-// Fetcher fetches images and GIFs based on visual cues.
 type Fetcher struct {
 	imageSearch ImageSearcher
 	gifSearch   GIFSearcher
 	cfg         FetcherConfig
 }
 
-// NewFetcher creates a new visual fetcher.
 func NewFetcher(imageSearch ImageSearcher, gifSearch GIFSearcher, cfg FetcherConfig) *Fetcher {
 	return &Fetcher{
 		imageSearch: imageSearch,
@@ -41,7 +37,6 @@ func NewFetcher(imageSearch ImageSearcher, gifSearch GIFSearcher, cfg FetcherCon
 	}
 }
 
-// Fetch fetches visuals for the given request and returns image overlays.
 func (f *Fetcher) Fetch(ctx context.Context, req FetchRequest) []video.ImageOverlay {
 	if f.imageSearch == nil && f.gifSearch == nil {
 		slog.Warn("No search clients configured")

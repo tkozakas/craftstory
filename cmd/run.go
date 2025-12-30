@@ -43,13 +43,13 @@ func runCron(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	result, err := app.BuildService(cfg, verbose)
+	service, err := app.BuildService(cfg, verbose)
 	if err != nil {
 		return err
 	}
 
-	pipeline := app.NewPipeline(result.Service)
-	approval := result.Approval
+	pipeline := app.NewPipeline(service)
+	approval := service.Approval()
 
 	if !runUpload && approval != nil {
 		approval.StartBot()
@@ -95,9 +95,10 @@ func runCron(cmd *cobra.Command, args []string) error {
 
 		if approval != nil {
 			_, err := approval.RequestApproval(ctx, telegram.ApprovalRequest{
-				VideoPath: genResult.VideoPath,
-				Title:     genResult.Title,
-				Script:    genResult.ScriptContent,
+				VideoPath:   genResult.VideoPath,
+				PreviewPath: genResult.PreviewPath,
+				Title:       genResult.Title,
+				Script:      genResult.ScriptContent,
 			})
 			if err != nil {
 				slog.Error("Failed to queue for approval", "error", err)
@@ -153,6 +154,14 @@ func handleApprovals(ctx context.Context, pipeline *app.Pipeline, approval *tele
 
 		slog.Info("Upload complete", "title", video.Title, "url", resp.URL)
 		approval.NotifyUploadComplete(video.Title, resp.URL, video)
+
+		if video.PreviewPath != "" {
+			if err := os.Remove(video.PreviewPath); err != nil {
+				slog.Warn("Failed to cleanup preview file", "path", video.PreviewPath, "error", err)
+			} else {
+				slog.Debug("Cleaned up preview file", "path", video.PreviewPath)
+			}
+		}
 	}
 }
 
@@ -185,7 +194,7 @@ func handleGenerations(ctx context.Context, pipeline *app.Pipeline, approval *te
 		}
 
 		slog.Info("Video generated", "title", genResult.Title, "path", genResult.VideoPath)
-		approval.NotifyGenerationComplete(req.ChatID, genResult.VideoPath, genResult.Title, genResult.ScriptContent)
+		approval.NotifyGenerationComplete(req.ChatID, genResult.VideoPath, genResult.PreviewPath, genResult.Title, genResult.ScriptContent)
 		approval.CompleteGeneration(req.ChatID)
 	}
 }

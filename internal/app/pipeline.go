@@ -13,8 +13,6 @@ import (
 	"craftstory/internal/video"
 )
 
-const defaultParallelism = 2
-
 type Pipeline struct {
 	service *Service
 }
@@ -25,6 +23,7 @@ type GenerateResult struct {
 	OutputDir     string
 	AudioPath     string
 	VideoPath     string
+	PreviewPath   string
 	Duration      float64
 }
 
@@ -87,12 +86,26 @@ func (pipeline *Pipeline) Generate(ctx context.Context, topic string) (*Generate
 		return nil, err
 	}
 
+	var previewPath string
+	previewDuration := generation.pipeline.service.cfg.Telegram.PreviewDuration
+	if previewDuration <= 0 {
+		previewDuration = 30
+	}
+	if result.Duration > previewDuration {
+		slog.Info("Creating preview...", "duration", previewDuration)
+		previewPath, err = generation.pipeline.service.assembler.CreatePreview(ctx, result.OutputPath, previewDuration)
+		if err != nil {
+			slog.Warn("Failed to create preview", "error", err)
+		}
+	}
+
 	return &GenerateResult{
 		Title:         title,
 		ScriptContent: script,
 		OutputDir:     generation.session.dir,
 		AudioPath:     generation.session.audioPath(),
 		VideoPath:     result.OutputPath,
+		PreviewPath:   previewPath,
 		Duration:      result.Duration,
 	}, nil
 }
@@ -240,7 +253,11 @@ func (generation *generationContext) generateSpeechSegments(parsed *dialogue.Scr
 
 	results := make(chan result, len(jobs))
 
-	semaphore := make(chan struct{}, defaultParallelism)
+	parallelism := generation.pipeline.service.cfg.ElevenLabs.TTSParallelism
+	if parallelism <= 0 {
+		parallelism = 2
+	}
+	semaphore := make(chan struct{}, parallelism)
 
 	for _, job := range jobs {
 		go func(j lineJob) {
@@ -338,19 +355,11 @@ func (pipeline *Pipeline) voices() []speech.VoiceConfig {
 	var result []speech.VoiceConfig
 
 	if cfg.ElevenLabs.HostVoice.ID != "" {
-		result = append(result, speech.VoiceConfig{
-			ID:            cfg.ElevenLabs.HostVoice.ID,
-			Name:          cfg.ElevenLabs.HostVoice.Name,
-			SubtitleColor: cfg.ElevenLabs.HostVoice.SubtitleColor,
-		})
+		result = append(result, cfg.ElevenLabs.HostVoice.ToSpeechConfig())
 	}
 
 	if cfg.ElevenLabs.GuestVoice.ID != "" {
-		result = append(result, speech.VoiceConfig{
-			ID:            cfg.ElevenLabs.GuestVoice.ID,
-			Name:          cfg.ElevenLabs.GuestVoice.Name,
-			SubtitleColor: cfg.ElevenLabs.GuestVoice.SubtitleColor,
-		})
+		result = append(result, cfg.ElevenLabs.GuestVoice.ToSpeechConfig())
 	}
 
 	return result
@@ -399,6 +408,10 @@ func (pipeline *Pipeline) fetchRedditTopic(ctx context.Context) (string, error) 
 }
 
 func (pipeline *Pipeline) Upload(ctx context.Context, request UploadRequest) (*distribution.UploadResponse, error) {
+	if pipeline.service.uploader == nil {
+		return nil, fmt.Errorf("uploader not configured (missing YouTube credentials)")
+	}
+
 	cfg := pipeline.service.cfg
 	response, err := pipeline.service.uploader.Upload(ctx, distribution.UploadRequest{
 		FilePath:    request.VideoPath,

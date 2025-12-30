@@ -115,8 +115,6 @@ func imagePath(dir string, index int, ext string) string {
 	return filepath.Join(dir, fmt.Sprintf("image_%d%s", index, ext))
 }
 
-// detectImageFormat returns the file extension based on magic bytes.
-// Returns empty string if format is not recognized.
 func detectImageFormat(data []byte) string {
 	if len(data) < 12 {
 		return ""

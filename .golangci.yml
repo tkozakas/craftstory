@@ -1,15 +1,5 @@
-linters:
-  enable:
-    - decorder
-    - gofmt
+version: "2"
 
-linters-settings:
-  decorder:
-    dec-order:
-      - const
-      - type
-      - var
-      - func
-    disable-dec-order-check: false
-    disable-dec-num-check: true
-    ignore-underscore-vars: true
+formatters:
+  enable:
+    - gofmt

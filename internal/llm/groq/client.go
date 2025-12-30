@@ -123,40 +123,27 @@ func (c *Client) GenerateTitle(ctx context.Context, script string) (string, erro
 }
 
 func (c *Client) generate(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
-	resp, err := c.client.ChatCompletion(ctx, groq.ChatCompletionRequest{
-		Model: c.model,
-		Messages: []groq.ChatCompletionMessage{
-			{Role: groq.RoleSystem, Content: systemPrompt},
-			{Role: groq.RoleUser, Content: userPrompt},
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("generate: %w", err)
-	}
-
-	if len(resp.Choices) == 0 {
-		return "", fmt.Errorf("no response")
-	}
-
-	content := resp.Choices[0].Message.Content
-	if content == "" {
-		return "", fmt.Errorf("empty response")
-	}
-
-	return content, nil
+	return c.doGenerate(ctx, systemPrompt, userPrompt, false)
 }
 
 func (c *Client) generateJSONContent(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
-	resp, err := c.client.ChatCompletion(ctx, groq.ChatCompletionRequest{
+	return c.doGenerate(ctx, systemPrompt, userPrompt, true)
+}
+
+func (c *Client) doGenerate(ctx context.Context, systemPrompt, userPrompt string, jsonMode bool) (string, error) {
+	req := groq.ChatCompletionRequest{
 		Model: c.model,
 		Messages: []groq.ChatCompletionMessage{
 			{Role: groq.RoleSystem, Content: systemPrompt},
 			{Role: groq.RoleUser, Content: userPrompt},
 		},
-		ResponseFormat: &groq.ChatResponseFormat{
-			Type: "json_object",
-		},
-	})
+	}
+
+	if jsonMode {
+		req.ResponseFormat = &groq.ChatResponseFormat{Type: "json_object"}
+	}
+
+	resp, err := c.client.ChatCompletion(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("generate: %w", err)
 	}

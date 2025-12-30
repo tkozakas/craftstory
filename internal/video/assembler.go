@@ -548,3 +548,32 @@ func orDefault(val, def float64) float64 {
 	}
 	return val
 }
+
+func (a *Assembler) CreatePreview(ctx context.Context, videoPath string, duration float64) (string, error) {
+	dir := filepath.Dir(videoPath)
+	previewPath := filepath.Join(dir, fmt.Sprintf("preview_%d.mp4", time.Now().UnixNano()))
+
+	args := []string{
+		"-y",
+		"-i", videoPath,
+		"-t", fmt.Sprintf("%.2f", duration),
+		"-vf", "scale=540:960",
+		"-c:v", "libx264",
+		"-preset", "ultrafast",
+		"-crf", "35",
+		"-b:v", "500k",
+		"-maxrate", "500k",
+		"-bufsize", "1M",
+		"-c:a", "aac",
+		"-b:a", "64k",
+		"-ar", "22050",
+		"-movflags", "+faststart",
+		previewPath,
+	}
+
+	if err := a.runFFmpeg(ctx, args); err != nil {
+		return "", fmt.Errorf("create preview: %w", err)
+	}
+
+	return previewPath, nil
+}

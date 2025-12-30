@@ -8,6 +8,7 @@ import (
 
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
 	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
+	"craftstory/internal/speech"
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 )
@@ -55,6 +56,14 @@ type VoiceConfig struct {
 	ID            string `yaml:"id"`
 	Name          string `yaml:"name"`
 	SubtitleColor string `yaml:"subtitle_color"`
+}
+
+func (v VoiceConfig) ToSpeechConfig() speech.VoiceConfig {
+	return speech.VoiceConfig{
+		ID:            v.ID,
+		Name:          v.Name,
+		SubtitleColor: v.SubtitleColor,
+	}
 }
 
 type ContentConfig struct {
@@ -113,7 +122,8 @@ type RedditConfig struct {
 }
 
 type TelegramConfig struct {
-	DefaultChatID int64 `yaml:"default_chat_id"`
+	DefaultChatID   int64   `yaml:"default_chat_id"`
+	PreviewDuration float64 `yaml:"preview_duration"`
 }
 
 func Load(ctx context.Context) (*Config, error) {

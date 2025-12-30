@@ -20,6 +20,7 @@ const (
 type ApprovalService struct {
 	client          *Client
 	defaultChatID   int64
+	previewDuration float64
 	reviewers       map[int64]Reviewer
 	reviewersMu     sync.RWMutex
 	dataFile        string
@@ -35,9 +36,10 @@ type ApprovalService struct {
 }
 
 type ApprovalRequest struct {
-	VideoPath string
-	Title     string
-	Script    string
+	VideoPath   string
+	PreviewPath string
+	Title       string
+	Script      string
 }
 
 type ApprovalResult struct {
@@ -46,10 +48,14 @@ type ApprovalResult struct {
 	ReviewerID int64
 }
 
-func NewApprovalService(client *Client, dataDir string, defaultChatID int64) *ApprovalService {
+func NewApprovalService(client *Client, dataDir string, defaultChatID int64, previewDuration float64) *ApprovalService {
+	if previewDuration <= 0 {
+		previewDuration = 30
+	}
 	svc := &ApprovalService{
 		client:          client,
 		defaultChatID:   defaultChatID,
+		previewDuration: previewDuration,
 		reviewers:       make(map[int64]Reviewer),
 		dataFile:        filepath.Join(dataDir, "reviewers.json"),
 		stopPoll:        make(chan struct{}),
@@ -110,10 +116,18 @@ func (s *ApprovalService) sendNextVideoTo(chatID int64) {
 	s.pendingVideo = video
 	s.pendingMu.Unlock()
 
+	videoToSend := video.VideoPath
+	if video.PreviewPath != "" {
+		videoToSend = video.PreviewPath
+	}
+
 	caption := fmt.Sprintf("*%s*\n\n📹 Video %d/%d remaining in queue", video.Title, s.queue.Len()+1, maxQueueSize)
+	if video.PreviewPath != "" {
+		caption += fmt.Sprintf("\n\n⏱ Preview (%.0fs)", s.previewDuration)
+	}
 	keyboard := NewApprovalKeyboard(callbackApprove, callbackReject)
 
-	resp, err := s.client.SendVideo(chatID, video.VideoPath, caption, keyboard)
+	resp, err := s.client.SendVideo(chatID, videoToSend, caption, keyboard)
 	if err != nil {
 		slog.Error("Failed to send video", "error", err)
 		s.pendingMu.Lock()
@@ -397,9 +411,10 @@ func (s *ApprovalService) WaitForResult(ctx context.Context) (*ApprovalResult, *
 
 func (s *ApprovalService) RequestApproval(ctx context.Context, request ApprovalRequest) (*ApprovalResult, error) {
 	video := QueuedVideo{
-		VideoPath: request.VideoPath,
-		Title:     request.Title,
-		Script:    request.Script,
+		VideoPath:   request.VideoPath,
+		PreviewPath: request.PreviewPath,
+		Title:       request.Title,
+		Script:      request.Script,
 	}
 
 	if err := s.QueueVideo(video); err != nil {
@@ -410,24 +425,19 @@ func (s *ApprovalService) RequestApproval(ctx context.Context, request ApprovalR
 }
 
 func (s *ApprovalService) NotifyUploadComplete(title, videoURL string, video *QueuedVideo) {
-	if video != nil && video.MessageID != 0 && video.ChatID != 0 {
-		caption := fmt.Sprintf("*%s*\n\n✅ Uploaded\n%s", title, videoURL)
-		_ = s.client.EditMessageCaption(video.ChatID, video.MessageID, caption)
-		return
-	}
-
-	s.reviewersMu.RLock()
-	defer s.reviewersMu.RUnlock()
-
-	msg := fmt.Sprintf("*%s* uploaded\n\n%s", title, videoURL)
-	for _, reviewer := range s.reviewers {
-		_ = s.client.SendMessage(reviewer.ChatID, msg)
-	}
+	caption := fmt.Sprintf("*%s*\n\n✅ Uploaded\n%s", title, videoURL)
+	fallback := fmt.Sprintf("*%s* uploaded\n\n%s", title, videoURL)
+	s.notifyResult(video, caption, fallback)
 }
 
 func (s *ApprovalService) NotifyUploadFailed(title string, err error, video *QueuedVideo) {
+	caption := fmt.Sprintf("*%s*\n\n❌ Upload failed: %s", title, err.Error())
+	fallback := fmt.Sprintf("Failed to upload *%s*\n\n%s", title, err.Error())
+	s.notifyResult(video, caption, fallback)
+}
+
+func (s *ApprovalService) notifyResult(video *QueuedVideo, caption, fallbackMsg string) {
 	if video != nil && video.MessageID != 0 && video.ChatID != 0 {
-		caption := fmt.Sprintf("*%s*\n\n❌ Upload failed: %s", title, err.Error())
 		_ = s.client.EditMessageCaption(video.ChatID, video.MessageID, caption)
 		return
 	}
@@ -435,9 +445,8 @@ func (s *ApprovalService) NotifyUploadFailed(title string, err error, video *Que
 	s.reviewersMu.RLock()
 	defer s.reviewersMu.RUnlock()
 
-	msg := fmt.Sprintf("Failed to upload *%s*\n\n%s", title, err.Error())
 	for _, reviewer := range s.reviewers {
-		_ = s.client.SendMessage(reviewer.ChatID, msg)
+		_ = s.client.SendMessage(reviewer.ChatID, fallbackMsg)
 	}
 }
 
@@ -465,19 +474,26 @@ func (s *ApprovalService) NotifyGenerating(chatID int64, topic string) {
 	_ = s.client.SendMessage(chatID, msg)
 }
 
-func (s *ApprovalService) NotifyGenerationComplete(chatID int64, videoPath, title, script string) {
+func (s *ApprovalService) NotifyGenerationComplete(chatID int64, videoPath, previewPath, title, script string) {
 	caption := fmt.Sprintf("*%s*\n\nGenerated successfully.", title)
 
-	_, err := s.client.SendVideo(chatID, videoPath, caption, nil)
+	videoToSend := videoPath
+	if previewPath != "" {
+		videoToSend = previewPath
+		caption += fmt.Sprintf("\n\n⏱ Preview (%.0fs)", s.previewDuration)
+	}
+
+	_, err := s.client.SendVideo(chatID, videoToSend, caption, nil)
 	if err != nil {
 		slog.Error("Failed to send video to requester", "chat_id", chatID, "error", err)
 	}
 
 	if s.defaultChatID != 0 && chatID != s.defaultChatID {
 		video := QueuedVideo{
-			VideoPath: videoPath,
-			Title:     title,
-			Script:    script,
+			VideoPath:   videoPath,
+			PreviewPath: previewPath,
+			Title:       title,
+			Script:      script,
 		}
 		if err := s.QueueVideo(video); err != nil {
 			slog.Error("Failed to queue video for approval", "error", err)

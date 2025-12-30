@@ -308,11 +308,32 @@ To create OAuth credentials:
 		return err
 	}
 
+	clientID = strings.TrimSpace(clientID)
+	clientSecret = strings.TrimSpace(clientSecret)
+
 	if clientID != "" {
 		env["YOUTUBE_CLIENT_ID"] = clientID
 	}
 	if clientSecret != "" {
 		env["YOUTUBE_CLIENT_SECRET"] = clientSecret
+	}
+
+	if clientID != "" && clientSecret != "" {
+		var authenticate bool
+		if err := huh.NewConfirm().
+			Title("Authenticate with YouTube now?").
+			Description("Opens browser to complete OAuth flow").
+			Value(&authenticate).
+			Run(); err != nil {
+			return err
+		}
+
+		if authenticate {
+			if err := runYouTubeOAuthFlow(clientID, clientSecret); err != nil {
+				fmt.Println(warnStyle.Render(fmt.Sprintf("OAuth flow failed: %v", err)))
+				fmt.Println(infoStyle.Render("You can retry later with: craftstory auth youtube"))
+			}
+		}
 	}
 
 	return nil
@@ -352,6 +373,9 @@ To create Custom Search credentials:
 		return err
 	}
 
+	apiKey = strings.TrimSpace(apiKey)
+	engineID = strings.TrimSpace(engineID)
+
 	if apiKey != "" {
 		env["GOOGLE_SEARCH_API_KEY"] = apiKey
 	}
@@ -384,8 +408,8 @@ func configureRequiredKeys(env map[string]string) error {
 		return err
 	}
 
-	env["GROQ_API_KEY"] = groqKey
-	env["ELEVENLABS_API_KEY"] = elevenKey
+	env["GROQ_API_KEY"] = strings.TrimSpace(groqKey)
+	env["ELEVENLABS_API_KEY"] = strings.TrimSpace(elevenKey)
 	return nil
 }
 
@@ -430,6 +454,7 @@ To get a Tenor API key:
 		return err
 	}
 
+	apiKey = strings.TrimSpace(apiKey)
 	if apiKey != "" {
 		env["TENOR_API_KEY"] = apiKey
 	}
@@ -459,6 +484,7 @@ func configureTelegram(env map[string]string) error {
 		return err
 	}
 
+	token = strings.TrimSpace(token)
 	if token != "" {
 		env["TELEGRAM_BOT_TOKEN"] = token
 	}
@@ -538,4 +564,10 @@ func runWithSpinner(title string, fn func() error) error {
 	}
 	fmt.Println(successStyle.Render("✓ " + title))
 	return nil
+}
+
+const youtubeTokenPath = "./youtube_token.json"
+
+func runYouTubeOAuthFlow(clientID, clientSecret string) error {
+	return runYouTubeAuth(clientID, clientSecret, youtubeTokenPath)
 }

@@ -42,12 +42,12 @@ func runOnce(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	result, err := app.BuildService(cfg, verbose)
+	service, err := app.BuildService(cfg, verbose)
 	if err != nil {
 		return err
 	}
 
-	pipeline := app.NewPipeline(result.Service)
+	pipeline := app.NewPipeline(service)
 
 	var genResult *app.GenerateResult
 	if onceUseReddit {

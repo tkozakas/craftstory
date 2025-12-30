@@ -70,3 +70,4 @@ reddit:
 
 telegram:
   default_chat_id: 1672345732
+  preview_duration: 30

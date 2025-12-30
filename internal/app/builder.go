@@ -17,12 +17,7 @@ import (
 	"craftstory/pkg/prompts"
 )
 
-type BuildResult struct {
-	Service  *Service
-	Approval *telegram.ApprovalService
-}
-
-func BuildService(cfg *config.Config, verbose bool) (*BuildResult, error) {
+func BuildService(cfg *config.Config, verbose bool) (*Service, error) {
 	p, err := prompts.Load()
 	if err != nil {
 		return nil, err
@@ -125,7 +120,7 @@ func BuildService(cfg *config.Config, verbose bool) (*BuildResult, error) {
 	var approval *telegram.ApprovalService
 	if cfg.TelegramBotToken != "" {
 		telegramClient := telegram.NewClient(cfg.TelegramBotToken)
-		approval = telegram.NewApprovalService(telegramClient, cfg.Video.OutputDir, cfg.Telegram.DefaultChatID)
+		approval = telegram.NewApprovalService(telegramClient, cfg.Video.OutputDir, cfg.Telegram.DefaultChatID, cfg.Telegram.PreviewDuration)
 	}
 
 	service := NewService(ServiceOptions{
@@ -140,8 +135,5 @@ func BuildService(cfg *config.Config, verbose bool) (*BuildResult, error) {
 		Approval:  approval,
 	})
 
-	return &BuildResult{
-		Service:  service,
-		Approval: approval,
-	}, nil
+	return service, nil
 }
