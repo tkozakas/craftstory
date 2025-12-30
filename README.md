@@ -35,11 +35,11 @@ GOOGLE_SEARCH_ENGINE_ID=...
 ## Usage
 
 ```bash
-task run -- run                        # cron mode: generate, approve via Telegram, repeat
-task run -- run -interval 30m          # custom interval
-task run -- run -upload                # cron mode: generate and upload directly
+mise exec -- task run -- run                        # cron mode: generate, approve via Telegram, repeat
+mise exec -- task run -- run --interval 30m          # custom interval
+mise exec -- task run -- run --upload                # cron mode: generate and upload directly
 
-task run -- once -topic "weird facts"  # single video
-task run -- once -reddit               # single from Reddit
-task run -- once -reddit -upload       # single + upload
+mise exec -- task run -- once --topic "weird facts"  # single video
+mise exec -- task run -- once --reddit               # single from Reddit
+mise exec -- task run -- once --reddit --upload       # single + upload
 ```
