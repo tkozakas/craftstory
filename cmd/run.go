@@ -77,7 +77,7 @@ func runCron(cmd *cobra.Command, args []string) error {
 			return
 		}
 
-		slog.Info("Video generated", "title", genResult.Title, "path", genResult.VideoPath)
+		slog.Info("Video generated", "title", genResult.Title, "tags", genResult.Tags, "path", genResult.VideoPath)
 
 		if runUpload {
 			resp, err := pipeline.Upload(ctx, app.UploadRequest{
@@ -196,7 +196,7 @@ func handleGenerations(ctx context.Context, pipeline *app.Pipeline, approval *te
 			continue
 		}
 
-		slog.Info("Video generated", "title", genResult.Title, "path", genResult.VideoPath)
+		slog.Info("Video generated", "title", genResult.Title, "tags", genResult.Tags, "path", genResult.VideoPath)
 		approval.NotifyGenerationComplete(req.ChatID, genResult.VideoPath, genResult.PreviewPath, genResult.Title, genResult.ScriptContent, genResult.Tags)
 		approval.CompleteGeneration(req.ChatID)
 	}

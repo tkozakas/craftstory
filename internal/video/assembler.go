@@ -108,32 +108,32 @@ var (
 var encoders = []encoder{
 	{
 		name:      "nvenc",
-		args:      []string{"-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-rc", "vbr", "-cq", "30", "-pix_fmt", "yuv420p"},
+		args:      []string{"-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "23", "-b:v", "8M", "-maxrate", "12M", "-bufsize", "16M", "-pix_fmt", "yuv420p"},
 		inputArgs: nil,
 		test:      func() bool { return testEnc("h264_nvenc") },
 	},
 	{
 		name:         "vaapi",
-		args:         []string{"-c:v", "h264_vaapi", "-qp", "28"},
+		args:         []string{"-c:v", "h264_vaapi", "-qp", "23", "-b:v", "8M", "-maxrate", "12M"},
 		inputArgs:    []string{"-vaapi_device", "/dev/dri/renderD128"},
 		filterSuffix: ",format=nv12,hwupload",
 		test:         testVAAPI,
 	},
 	{
 		name: "v4l2m2m",
-		args: []string{"-c:v", "h264_v4l2m2m", "-b:v", "2M", "-pix_fmt", "yuv420p"},
+		args: []string{"-c:v", "h264_v4l2m2m", "-b:v", "8M", "-pix_fmt", "yuv420p"},
 		test: func() bool { return testEnc("h264_v4l2m2m") },
 	},
 	{
 		name: "omx",
-		args: []string{"-c:v", "h264_omx", "-b:v", "2M", "-pix_fmt", "yuv420p"},
+		args: []string{"-c:v", "h264_omx", "-b:v", "8M", "-pix_fmt", "yuv420p"},
 		test: func() bool { return testEnc("h264_omx") },
 	},
 }
 
 var softwareEncoder = encoder{
 	name: "libx264",
-	args: []string{"-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-threads", "0", "-crf", "28", "-pix_fmt", "yuv420p"},
+	args: []string{"-c:v", "libx264", "-preset", "medium", "-crf", "20", "-b:v", "8M", "-maxrate", "12M", "-bufsize", "16M", "-pix_fmt", "yuv420p"},
 }
 
 func NewAssembler(outputDir string, subtitleGen *SubtitleGenerator, bgProvider storage.BackgroundProvider) *Assembler {
@@ -368,7 +368,7 @@ func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTi
 
 	args = append(args, "-filter_complex", filterComplex, "-map", "[v]", "-map", "[a]")
 	args = append(args, enc.args...)
-	args = append(args, "-c:a", "aac", "-b:a", "96k", "-ar", "44100", "-movflags", "+faststart", outputPath)
+	args = append(args, "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", outputPath)
 	return args
 }
 

@@ -331,19 +331,10 @@ func (generation *generationContext) fetchImages(script string, timings []speech
 		return nil
 	}
 
-	searchCues := make([]search.VisualCue, len(cues))
-	for i, cue := range cues {
-		searchCues[i] = search.VisualCue{
-			Keyword:     cue.Keyword,
-			SearchQuery: cue.SearchQuery,
-			Type:        cue.Type,
-		}
-	}
-
 	slog.Info("Fetching visuals...", "timings_count", len(timings))
 	return fetcher.Fetch(generation.ctx, search.FetchRequest{
 		Script:   script,
-		Visuals:  searchCues,
+		Visuals:  cues,
 		Timings:  timings,
 		ImageDir: generation.session.dir,
 	})

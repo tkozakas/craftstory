@@ -72,29 +72,12 @@ func (c *Client) GenerateVisuals(ctx context.Context, script string, count int) 
 
 	slog.Info("LLM visuals raw response", "content", content)
 
-	var visuals []llm.VisualCue
-	if err := json.Unmarshal([]byte(content), &visuals); err == nil && len(visuals) > 0 {
-		return deduplicateVisuals(visuals), nil
+	visuals, err := parseJSONArray[llm.VisualCue](content, []string{"visuals", "visual_cues", "keywords", "images", "results"})
+	if err != nil {
+		return nil, err
 	}
 
-	var wrapped map[string][]llm.VisualCue
-	if err := json.Unmarshal([]byte(content), &wrapped); err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
-	}
-
-	for _, key := range []string{"visuals", "visual_cues", "keywords", "images", "results"} {
-		if cues, ok := wrapped[key]; ok && len(cues) > 0 {
-			return deduplicateVisuals(cues), nil
-		}
-	}
-
-	for _, cues := range wrapped {
-		if len(cues) > 0 {
-			return deduplicateVisuals(cues), nil
-		}
-	}
-
-	return nil, fmt.Errorf("no visual cues found in response")
+	return deduplicateVisuals(visuals), nil
 }
 
 func deduplicateVisuals(visuals []llm.VisualCue) []llm.VisualCue {
@@ -156,29 +139,38 @@ func (c *Client) GenerateTags(ctx context.Context, script string, count int) ([]
 		return nil, err
 	}
 
-	var tags []string
-	if err := json.Unmarshal([]byte(content), &tags); err == nil && len(tags) > 0 {
-		return cleanTags(tags), nil
+	tags, err := parseJSONArray[string](content, []string{"tags", "keywords", "results"})
+	if err != nil {
+		return nil, err
 	}
 
-	var wrapped map[string][]string
+	return cleanTags(tags), nil
+}
+
+func parseJSONArray[T any](content string, keys []string) ([]T, error) {
+	var direct []T
+	if err := json.Unmarshal([]byte(content), &direct); err == nil && len(direct) > 0 {
+		return direct, nil
+	}
+
+	var wrapped map[string][]T
 	if err := json.Unmarshal([]byte(content), &wrapped); err != nil {
-		return nil, fmt.Errorf("parse tags response: %w", err)
+		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
-	for _, key := range []string{"tags", "keywords", "results"} {
-		if t, ok := wrapped[key]; ok && len(t) > 0 {
-			return cleanTags(t), nil
+	for _, key := range keys {
+		if items, ok := wrapped[key]; ok && len(items) > 0 {
+			return items, nil
 		}
 	}
 
-	for _, t := range wrapped {
-		if len(t) > 0 {
-			return cleanTags(t), nil
+	for _, items := range wrapped {
+		if len(items) > 0 {
+			return items, nil
 		}
 	}
 
-	return nil, fmt.Errorf("no tags found in response")
+	return nil, fmt.Errorf("no items found in response")
 }
 
 func cleanTags(tags []string) []string {

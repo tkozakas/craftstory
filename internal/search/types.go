@@ -10,16 +10,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"craftstory/internal/llm"
 	"craftstory/internal/search/google"
 	"craftstory/internal/search/tenor"
 	"craftstory/internal/speech"
 )
 
-type VisualCue struct {
-	Keyword     string `json:"keyword"`
-	SearchQuery string `json:"search_query"`
-	Type        string `json:"type"` // "image" or "gif"
-}
+type VisualCue = llm.VisualCue
 
 type ImageSearcher interface {
 	Search(ctx context.Context, query string, count int) ([]google.Result, error)

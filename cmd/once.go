@@ -64,6 +64,7 @@ func runOnce(cmd *cobra.Command, args []string) error {
 
 	slog.Info("Video generated",
 		"title", genResult.Title,
+		"tags", genResult.Tags,
 		"path", genResult.VideoPath,
 		"duration", genResult.Duration,
 	)

@@ -91,7 +91,7 @@ func (s *ApprovalService) QueueVideo(video QueuedVideo) error {
 	if err := s.queue.Add(video); err != nil {
 		return err
 	}
-	slog.Info("Video queued for review", "title", video.Title, "queue_size", s.queue.Len())
+	slog.Info("Video queued for review", "title", video.Title, "queue_size", s.queue.Len(), "has_preview", video.PreviewPath != "")
 
 	if s.defaultChatID != 0 {
 		s.sendNextVideoTo(s.defaultChatID)
@@ -105,12 +105,14 @@ func (s *ApprovalService) sendNextVideoTo(chatID int64) {
 	s.pendingMu.Lock()
 	if s.pendingVideo != nil {
 		s.pendingMu.Unlock()
+		slog.Debug("Skipping send: video already pending review", "pending_title", s.pendingVideo.Title)
 		return
 	}
 
 	video, err := s.queue.Pop()
 	if err != nil {
 		s.pendingMu.Unlock()
+		slog.Debug("Skipping send: queue empty")
 		return
 	}
 
@@ -121,6 +123,7 @@ func (s *ApprovalService) sendNextVideoTo(chatID int64) {
 	if video.PreviewPath != "" {
 		videoToSend = video.PreviewPath
 	}
+	slog.Debug("Sending video for review", "title", video.Title, "path", videoToSend, "has_preview", video.PreviewPath != "")
 
 	caption := fmt.Sprintf("*%s*\n\n📹 Video %d/%d remaining in queue", video.Title, s.queue.Len()+1, maxQueueSize)
 	if video.PreviewPath != "" {
@@ -327,7 +330,10 @@ func (s *ApprovalService) handleReviewCommand(chat *Chat, user *User) {
 }
 
 func (s *ApprovalService) handleCallbackQuery(cb *CallbackQuery) {
+	slog.Debug("Callback received", "data", cb.Data, "from", cb.From.ID)
+
 	if cb.Message != nil && s.defaultChatID != 0 && cb.Message.Chat.ID != s.defaultChatID {
+		slog.Debug("Callback rejected: wrong chat", "chat_id", cb.Message.Chat.ID, "expected", s.defaultChatID)
 		_ = s.client.AnswerCallbackQuery(cb.ID, "Not authorized")
 		return
 	}
@@ -337,11 +343,13 @@ func (s *ApprovalService) handleCallbackQuery(cb *CallbackQuery) {
 	s.pendingMu.Unlock()
 
 	if video == nil {
+		slog.Debug("Callback rejected: no pending video")
 		_ = s.client.AnswerCallbackQuery(cb.ID, "No video pending")
 		return
 	}
 
 	approved := cb.Data == callbackApprove
+	slog.Info("Video decision", "approved", approved, "title", video.Title)
 
 	_ = s.client.AnswerCallbackQuery(cb.ID, "")
 

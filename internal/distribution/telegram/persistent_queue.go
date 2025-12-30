@@ -84,6 +84,13 @@ func (q *PersistentQueue[T]) IsFull() bool {
 	return len(q.items) >= q.maxSize
 }
 
+func (q *PersistentQueue[T]) Clear() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.items = make([]T, 0, q.maxSize)
+	q.save()
+}
+
 func (q *PersistentQueue[T]) Update(fn func(items []T) []T) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
