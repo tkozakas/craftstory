@@ -1,45 +1,49 @@
 # Craftstory
 
-YouTube Shorts automation with AI voiceover.
+AI-powered YouTube Shorts automation.
+
+## Prerequisites
+
+- [mise](https://mise.jdx.dev) - tool version manager
+- [ffmpeg](https://ffmpeg.org) - video processing
 
 ## Setup
 
-- [mise](https://mise.jdx.dev)
-- ffmpeg
-
 ```bash
-curl https://mise.run | sh && export PATH="$HOME/.local/bin:$PATH"
-sudo apt install ffmpeg
 mise install
 mise exec -- task setup
 ```
 
-### Manual Setup
+The interactive wizard handles API keys, directories, and OAuth flows.
 
-Create a `.env` file instead:
-
-```bash
-GROQ_API_KEY=gsk_...
-ELEVENLABS_API_KEY=sk_...
-TELEGRAM_BOT_TOKEN=123456:ABC...  # optional
-
-# For YouTube uploads
-YOUTUBE_CLIENT_ID=...
-YOUTUBE_CLIENT_SECRET=...
-
-# For image search in videos
-GOOGLE_SEARCH_API_KEY=...
-GOOGLE_SEARCH_ENGINE_ID=...
-```
+> Manual setup? See [SETUP.md](SETUP.md)
 
 ## Usage
 
-```bash
-mise exec -- task run -- run                        # cron mode: generate, approve via Telegram, repeat
-mise exec -- task run -- run --interval 30m          # custom interval
-mise exec -- task run -- run --upload                # cron mode: generate and upload directly
+### Single Video
 
-mise exec -- task run -- once --topic "weird facts"  # single video
-mise exec -- task run -- once --reddit               # single from Reddit
-mise exec -- task run -- once --reddit --upload       # single + upload
+```bash
+# Generate from topic
+task run -- once --topic "ancient mysteries"
+
+# Generate from Reddit
+task run -- once --reddit
+
+# Generate and upload
+task run -- once --topic "space facts" --upload
 ```
+
+### Continuous Mode
+
+```bash
+# Generate + approve via Telegram
+task run -- run
+
+# Custom interval
+task run -- run --interval 30m
+
+# Auto-upload (no approval)
+task run -- run --upload
+```
+
+
