@@ -89,3 +89,38 @@ assets/
   music/         # Background music (mp3, optional)
 output/          # Generated videos
 ```
+
+## Configuration
+
+### [config.yaml](config.yaml)
+
+Video generation settings.
+
+| Section | Key Settings |
+|---------|--------------|
+| `groq` | LLM model selection |
+| `elevenlabs` | Voice settings (speed, stability, voice IDs) |
+| `content` | Target duration, conversation mode toggle |
+| `visuals` | Image overlay settings (position, size, count) |
+| `video` | Output resolution, directories, max duration |
+| `music` | Background music volume, fade settings |
+| `subtitles` | Font, size, colors, positioning |
+| `youtube` | Default tags, privacy status |
+| `reddit` | Subreddits to pull content from |
+| `telegram` | Bot chat ID, preview duration |
+
+### [prompts.yaml](prompts.yaml)
+
+AI prompt templates for content generation.
+
+| Section | Purpose |
+|---------|---------|
+| `system.default` | Base storytelling persona |
+| `system.conversation` | Two-speaker dialogue persona |
+| `script.single` | Single narrator script template |
+| `script.conversation` | Dialogue script with host/guest dynamics |
+| `script.visuals` | Image keyword extraction from scripts |
+| `title.generate` | YouTube title generation |
+| `tags.generate` | YouTube tags generation |
+
+Templates use Go templating (`{{.Variable}}`) for dynamic values like topic, word count, and speaker names.
