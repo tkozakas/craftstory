@@ -111,7 +111,7 @@ Video generation settings.
 
 ### [prompts.yaml](prompts.yaml)
 
-AI prompt templates for content generation.
+LLM prompt templates for content generation.
 
 | Section | Purpose |
 |---------|---------|

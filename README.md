@@ -1,6 +1,6 @@
 # Craftstory
 
-AI-powered YouTube Shorts automation.
+LLM-powered YouTube Shorts automation.
 
 ## Prerequisites
 
