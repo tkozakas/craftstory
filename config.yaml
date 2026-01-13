@@ -33,6 +33,7 @@ video:
   cache_dir: "./.cache"
   resolution: "1080x1920"
   max_duration: 120.0
+  threads: 2
 
 music:
   enabled: true
@@ -55,6 +56,8 @@ youtube:
   default_tags:
     - "shorts"
     - "facts"
+    - "celebrity"
+    - "scandal"
   privacy_status: "private"
 
 reddit:

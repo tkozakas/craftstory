@@ -73,6 +73,7 @@ func BuildService(cfg *config.Config, verbose bool) (*Service, error) {
 	assembler := video.NewAssemblerWithOptions(video.AssemblerOptions{
 		OutputDir:    cfg.Video.OutputDir,
 		Resolution:   cfg.Video.Resolution,
+		Threads:      cfg.Video.Threads,
 		SubtitleGen:  subtitleGen,
 		BgProvider:   localStorage,
 		MusicDir:     musicDir,

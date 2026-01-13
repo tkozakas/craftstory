@@ -32,6 +32,7 @@ type Assembler struct {
 	outputDir   string
 	width       int
 	height      int
+	threads     int
 	subtitleGen *SubtitleGenerator
 	bgProvider  storage.BackgroundProvider
 	music       musicConfig
@@ -55,6 +56,7 @@ type clipConfig struct {
 type AssemblerOptions struct {
 	OutputDir     string
 	Resolution    string
+	Threads       int
 	SubtitleGen   *SubtitleGenerator
 	BgProvider    storage.BackgroundProvider
 	MusicDir      string
@@ -150,12 +152,17 @@ func NewAssembler(outputDir string, subtitleGen *SubtitleGenerator, bgProvider s
 
 func NewAssemblerWithOptions(opts AssemblerOptions) *Assembler {
 	w, h := parseResolution(opts.Resolution)
+	threads := opts.Threads
+	if threads <= 0 {
+		threads = 0 // 0 means auto (use all cores)
+	}
 	return &Assembler{
 		ffmpeg:      ffmpegBin,
 		ffprobe:     ffprobeBin,
 		outputDir:   opts.OutputDir,
 		width:       w,
 		height:      h,
+		threads:     threads,
 		subtitleGen: opts.SubtitleGen,
 		bgProvider:  opts.BgProvider,
 		music: musicConfig{
@@ -349,7 +356,7 @@ func (a *Assembler) buildFFmpegArgs(bgClip, audioPath, musicPath string, startTi
 	}
 	videoDur := duration + videoEndBuffer
 
-	args := []string{"-y", "-threads", "0"}
+	args := []string{"-y", "-threads", strconv.Itoa(a.threads)}
 	args = append(args, enc.inputArgs...)
 	args = append(args, "-ss", fmt.Sprintf("%.2f", startTime), "-t", fmt.Sprintf("%.2f", videoDur), "-i", bgClip, "-i", audioPath)
 
@@ -492,7 +499,7 @@ func (a *Assembler) prepareClip(ctx context.Context, cfg clipConfig, dir, prefix
 
 	out := filepath.Join(dir, fmt.Sprintf("%s_%d.mp4", prefix, time.Now().UnixNano()))
 	vf := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d", a.width, a.height, a.width, a.height)
-	args := []string{"-y", "-i", cfg.path, "-t", fmt.Sprintf("%.2f", targetDur), "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast", "-threads", "0", "-c:a", "aac", "-ar", "44100", out}
+	args := []string{"-y", "-i", cfg.path, "-t", fmt.Sprintf("%.2f", targetDur), "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast", "-threads", strconv.Itoa(a.threads), "-c:a", "aac", "-ar", "44100", out}
 
 	if err := a.runFFmpeg(ctx, args); err != nil {
 		return "", 0, err

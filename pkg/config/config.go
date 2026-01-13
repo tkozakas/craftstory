@@ -78,6 +78,7 @@ type VideoConfig struct {
 	CacheDir      string  `yaml:"cache_dir"`
 	Resolution    string  `yaml:"resolution"`
 	MaxDuration   float64 `yaml:"max_duration"`
+	Threads       int     `yaml:"threads"`
 }
 
 type MusicConfig struct {
